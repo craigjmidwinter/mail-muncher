@@ -708,7 +708,7 @@ rules:
 | `quarantine_dir` | path | `<state_dir>/quarantine` | Where quarantined messages are parked. |
 | `accounts` | list | — | Mailboxes to pull from. At least one is required. |
 | `accounts[].name` | string | — | Required, unique. Names the state file and is what `rules[].account` refers to. |
-| `accounts[].provider` | `imap`, `gmail` | `gmail` | Which backend fetches. See [Two ways to connect a mailbox](#two-ways-to-connect-a-mailbox). |
+| `accounts[].provider` | `imap`, `gmail` | — | **Required**; there is no default. Which backend fetches. See [Two ways to connect a mailbox](#two-ways-to-connect-a-mailbox). |
 | `accounts[].imap` | mapping | — | Required — and only permitted — when the provider is `imap`. |
 | `accounts[].imap.host` | string | — | Required. `imap.fastmail.com`, `imap.gmail.com`, `127.0.0.1` for the Proton Bridge. |
 | `accounts[].imap.port` | integer | `993` | 993 is implicit TLS (IMAPS) and pairs with the `tls: true` default. |

@@ -139,7 +139,7 @@ every subcommand. Full reference:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `name` | — | Required, unique. Names the state file; `rules[].account` refers to it. |
-| `provider` | `gmail` | `gmail` or `imap`. **Omitting it means `gmail`**, which is the slower path — always write it out. |
+| `provider` | — | `gmail` or `imap`. **Required** — omitting it is a validation error, not a default. |
 | `gmail` | — | Required for `provider: gmail`, **forbidden** on an `imap` account. |
 | `imap` | — | Required for `provider: imap`, **forbidden** on a `gmail` account. |
 
