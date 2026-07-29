@@ -189,8 +189,10 @@ Also in the repository:
 
 ## Status and scope
 
-Pre-1.0 and unreleased. The config schema is stable enough to write against,
-but treat it as subject to change until 1.0.
+Pre-1.0. The current release is
+[v0.1.0](https://github.com/craigjmidwinter/mail-muncher/releases/latest). The
+config schema is stable enough to write against, but treat it as subject to
+change until 1.0.
 
 | Area | Status |
 | --- | --- |

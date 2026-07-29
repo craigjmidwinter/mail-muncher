@@ -1,5 +1,11 @@
 # mail-muncher
 
+[![CI](https://github.com/craigjmidwinter/mail-muncher/actions/workflows/ci.yml/badge.svg)](https://github.com/craigjmidwinter/mail-muncher/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/craigjmidwinter/mail-muncher.svg)](https://pkg.go.dev/github.com/craigjmidwinter/mail-muncher)
+[![Go version](https://img.shields.io/github/go-mod/go-version/craigjmidwinter/mail-muncher)](go.mod)
+[![Release](https://img.shields.io/github/v/release/craigjmidwinter/mail-muncher?color=blue)](https://github.com/craigjmidwinter/mail-muncher/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Give a program its own read-only mailbox, filtered down to exactly the mail it
 asked for, delivered as files on disk.
 
@@ -959,9 +965,10 @@ seen set is only belt and braces.
 
 ## Status and scope
 
-Pre-1.0 and unreleased: there are no tagged versions yet, and a build without
-`make` reports its version as `dev`. The config schema is stable enough to
-write against, but treat it as subject to change until 1.0.
+Pre-1.0. The current release is
+[v0.1.0](https://github.com/craigjmidwinter/mail-muncher/releases/latest); a
+build without `make` reports its version as `dev`. The config schema is stable
+enough to write against, but treat it as subject to change until 1.0.
 
 | Area | Status |
 | --- | --- |
