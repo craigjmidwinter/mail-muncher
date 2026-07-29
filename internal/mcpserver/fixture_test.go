@@ -24,24 +24,35 @@ import (
 // filename or a frontmatter block — a change to sink.Basename or to the
 // frontmatter must show up as a failure here, not as a silent divergence.
 type fixture struct {
-	t          *testing.T
-	root       string
-	cfg        *config.Config
-	domainFile string
+	t           *testing.T
+	root        string
+	cfg         *config.Config
+	domainFile  string
+	patternFile string
 }
 
 // newFixture builds the config and returns an empty archive.
 //
 // Three rules, deliberately different from each other:
 //
-//	job-search   account personal, [eml markdown], driven by a from_domains_file
+//	job-search   account personal, [eml markdown], driven by both externally-owned
+//	             file predicates: a from_domains_file and a from_regex_file
 //	newsletters  account work,     [eml] only — the fallback path
 //	everything   no account,       [markdown] only
+//
+// job-search carries both file kinds because that is the case list_rules has to
+// get right: a rule whose subscription lives half in one file and half in the
+// other must report both, or an agent reads a confident half-answer.
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 
 	root := t.TempDir()
-	f := &fixture{t: t, root: root, domainFile: filepath.Join(root, "wanted-senders.txt")}
+	f := &fixture{
+		t:           t,
+		root:        root,
+		domainFile:  filepath.Join(root, "wanted-senders.txt"),
+		patternFile: filepath.Join(root, "tracked-companies.txt"),
+	}
 
 	body := fmt.Sprintf(`state_dir: %[1]s/state
 accounts:
@@ -63,6 +74,7 @@ rules:
     match:
       any:
         - from_domains_file: %[2]s
+        - from_regex_file: %[3]s
         - from_domains: [acme.example]
   - name: newsletters
     account: work
@@ -75,7 +87,7 @@ rules:
     formats: [markdown]
     match:
       subject_regex: "."
-`, root, f.domainFile)
+`, root, f.domainFile, f.patternFile)
 
 	path := filepath.Join(root, "config.yml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))

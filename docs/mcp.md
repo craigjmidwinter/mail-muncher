@@ -106,21 +106,24 @@ nothing else; every log line goes to stderr, where the client collects it.
 - **Nothing outside the archive is reachable or named.** Not the config file,
   not `credentials_file` or `token_file`, not the state directory, not the
   quarantine directory. The one exception is deliberate: `list_rules` names each
-  rule's `from_domains_file`, because that file belongs to the agent.
+  rule's `from_domains_file` and `from_regex_file`, because those files belong to
+  the agent.
 - **A refused path is indistinguishable from a missing one**, so the jail cannot
   be used to probe the filesystem.
 - **The config is read once, at startup.** Editing `config.yml` needs a restart.
-  The `from_domains_file` lists it points at are *not* cached — they are re-read
-  on every `list_rules` call.
+  The `from_domains_file` and `from_regex_file` lists it points at are *not*
+  cached — they are re-read on every `list_rules` call.
 
 ## `list_rules`
 
 No arguments. Start here: it is the only tool that says what is being collected.
 
-The point of it is the resolution. Every `from_domains_file` in every rule's
-match tree is read **at call time**, with the same parsing the filter engine
-uses, so an agent that rewrote its own subscription file a second ago sees the
-new list.
+The point of it is the resolution. Every externally-owned file a rule reads —
+every `from_domains_file` **and** every `from_regex_file` in its match tree — is
+read **at call time**, with the same parsing the filter engine uses, so an agent
+that rewrote its own subscription file a second ago sees the new list. A rule
+whose subscription is split across both kinds reports both; there is no view of
+this tool's output in which half a subscription looks like a whole one.
 
 Returns `{"rules": [...]}`, in config order:
 
@@ -132,6 +135,7 @@ Returns `{"rules": [...]}`, in config order:
 | `dest` | string | Destination directory, as configured. |
 | `formats` | array of string | Renderings this rule writes. |
 | `domain_files` | array, omitted when the rule has none | One entry per `from_domains_file`, resolved as of this call. |
+| `pattern_files` | array, omitted when the rule has none | One entry per `from_regex_file`, resolved as of this call. |
 | `stored_messages` | integer | Messages currently on disk under this rule's `dest`. |
 
 Each `domain_files` entry:
@@ -144,6 +148,18 @@ Each `domain_files` entry:
 | `count` | integer | `domains` length. |
 | `modified_at` | RFC3339 UTC, omitted when unreadable | When the file was last written. |
 | `note` | string, omitted when the list is fine | Why the list is empty: not written yet, unreadable, a directory, or listing no usable domains. |
+
+Each `pattern_files` entry:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `path` | string | The pattern list, as configured. |
+| `exists` | bool | Whether it was readable at the time of the call. |
+| `patterns` | array of string | The RE2 patterns currently in force, as written in the file, de-duplicated. `[]` when there are none. |
+| `count` | integer | `patterns` length. |
+| `rejected` | integer | How many lines the breadth guards refused: they do not compile, or they match the empty string and so would match every message. |
+| `modified_at` | RFC3339 UTC, omitted when unreadable | When the file was last written. |
+| `note` | string, omitted when nothing is wrong | Why the list is empty or shorter than the file. |
 
 ```json
 {
@@ -163,6 +179,17 @@ Each `domain_files` entry:
           "modified_at": "2026-07-28T09:02:11Z"
         }
       ],
+      "pattern_files": [
+        {
+          "path": "/Users/you/.local/share/jobsearch/companies.txt",
+          "exists": true,
+          "patterns": ["wagepoint", "(?i)^careers@acme\\.io$"],
+          "count": 2,
+          "rejected": 1,
+          "modified_at": "2026-07-28T09:02:11Z",
+          "note": "1 line rejected: a line is refused when it does not compile, or when it would match every message. Only the 2 patterns listed here are in force"
+        }
+      ],
       "stored_messages": 37
     }
   ]
@@ -171,6 +198,14 @@ Each `domain_files` entry:
 
 A missing file is an empty list plus a `note`, never a tool error — the program
 that owns it may simply not have written it yet.
+
+`rejected` is the field to watch. `count: 1, rejected: 11` means the program
+generating that file emitted junk, and the rule is now subscribed to almost
+nothing; that is worth telling a human about. The rejected lines' own text is
+deliberately **not** returned — `mail-muncher validate` prints them, and a
+tool result is the wrong place for an unbounded quantity of somebody else's
+file. `pattern_files` was added after `domain_files`; a rule with only a domain
+list is reported exactly as it was before.
 
 ## `list_messages`
 

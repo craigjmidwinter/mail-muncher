@@ -2,10 +2,12 @@ package mcpserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -165,12 +167,106 @@ func TestProtocolRoundTrips(t *testing.T) {
 	callJSON(t, cs, "list_rules", map[string]any{}, &rules)
 	require.Len(t, rules.Rules, 3)
 	require.Len(t, rules.Rules[0].DomainFiles, 1)
+	require.Len(t, rules.Rules[0].PatternFiles, 1,
+		"pattern_files survives the inferred output schema, same as domain_files")
 
 	var synced SyncOutput
 	callJSON(t, cs, "sync", map[string]any{"dry_run": false}, &synced)
 	require.Len(t, synced.Manifests, 1)
 	require.Equal(t, 2, synced.Manifests[0].Summary.Fetched)
 	require.Equal(t, 1, runner.callCount())
+}
+
+// TestServeStdioListRulesReportsBothFileKinds drives list_rules the way a real
+// client does — raw JSON-RPC over a pipe, no in-memory shortcut — for a rule
+// whose subscription is split across a domain list and a pattern list.
+//
+// It asserts on the decoded frame rather than on the handler's return value,
+// so a field that the inferred output schema drops on the way out is a failure
+// here. The frame is logged, because the shape of that JSON is the contract an
+// agent codes against and it should be readable from a test run.
+func TestServeStdioListRulesReportsBothFileKinds(t *testing.T) {
+	f := seedArchive(t)
+	require.NoError(t, os.WriteFile(f.domainFile, []byte(
+		"# senders I am waiting to hear from\n@Acme.example.\nglobex.io\n"), 0o644))
+	require.NoError(t, os.WriteFile(f.patternFile, []byte(
+		"# tracked companies\nwagepoint\n(?i)^careers@acme\\.io$\nx?\n"), 0o644))
+	s := f.server(&fakeSyncer{})
+
+	inReader, inWriter := io.Pipe()
+	outReader, outWriter := io.Pipe()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	served := make(chan error, 1)
+	go func() {
+		err := s.ServeStdio(ctx, inReader, outWriter)
+		_ = outWriter.Close()
+		served <- err
+	}()
+
+	requests := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"v1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_rules","arguments":{}}}`,
+	}
+	go func() {
+		for _, r := range requests {
+			if _, err := io.WriteString(inWriter, r+"\n"); err != nil {
+				return
+			}
+		}
+	}()
+
+	scanner := bufio.NewScanner(outReader)
+	scanner.Buffer(make([]byte, 0, 64*1024), 4<<20)
+
+	var structured json.RawMessage
+	for scanner.Scan() {
+		var frame struct {
+			ID     float64 `json:"id"`
+			Result struct {
+				IsError           bool            `json:"isError"`
+				StructuredContent json.RawMessage `json:"structuredContent"`
+			} `json:"result"`
+		}
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &frame),
+			"the output stream carried something that is not a JSON-RPC frame: %q", scanner.Text())
+		if frame.ID != 2 {
+			continue
+		}
+		require.False(t, frame.Result.IsError)
+		structured = frame.Result.StructuredContent
+		break
+	}
+	require.NoError(t, scanner.Err())
+	require.NotEmpty(t, structured, "list_rules produced no structured content")
+
+	var pretty bytes.Buffer
+	require.NoError(t, json.Indent(&pretty, structured, "", "  "))
+	t.Logf("list_rules over stdio:\n%s", pretty.String())
+
+	var out ListRulesOutput
+	require.NoError(t, json.Unmarshal(structured, &out))
+
+	jobs := out.Rules[0]
+	require.Equal(t, "job-search", jobs.Name)
+	require.Len(t, jobs.DomainFiles, 1)
+	require.Equal(t, []string{"acme.example", "globex.io"}, jobs.DomainFiles[0].Domains)
+	require.Len(t, jobs.PatternFiles, 1)
+	require.Equal(t, []string{"wagepoint", `(?i)^careers@acme\.io$`}, jobs.PatternFiles[0].Patterns)
+	require.Equal(t, 2, jobs.PatternFiles[0].Count)
+	require.Equal(t, 1, jobs.PatternFiles[0].Rejected)
+	require.Contains(t, jobs.PatternFiles[0].Note, "1 line rejected")
+
+	require.NoError(t, inWriter.Close())
+	select {
+	case err := <-served:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("the server did not stop after the client closed the stream")
+	}
 }
 
 // TestProtocolToolErrorsAreToolErrors: a hostile path, an unknown id and a

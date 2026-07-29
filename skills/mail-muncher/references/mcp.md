@@ -72,7 +72,8 @@ startup.
   path is deliberately indistinguishable from "no such file" so the jail cannot
   be used to probe the filesystem.
 - No credential, token, state or config path is ever exposed. `list_rules` names
-  `from_domains_file` paths only, because those belong to the agent.
+  `from_domains_file` and `from_regex_file` paths only, because those belong to
+  the agent.
 - Four of the five tools cannot change anything. `sync` can only ever **add**
   files: it runs the same cycle `run` does, takes the same cross-process lock,
   and is bound by the same read-only guarantee as the configured provider — the
@@ -135,18 +136,33 @@ first hit.
 
 No arguments. Returns each configured rule in config order with `name`,
 `account`, `accounts` (the configured accounts it actually applies to), `dest`,
-`formats`, `stored_messages` (how many are on disk under that dest), and
-`domain_files`.
+`formats`, `stored_messages` (how many are on disk under that dest), and the
+resolved subscription files: `domain_files` and `pattern_files`.
 
-`domain_files` is the important part and the reason to call this first: every
-`from_domains_file` the rule references is **read at call time**, not echoed as
-a path. Each entry has `path`, `exists`, `domains` (normalized and
-de-duplicated exactly as the pipeline would parse them), `count`,
-`modified_at`, and a `note` explaining why the list is empty when it is. A
-missing file is an empty list plus a note, never an error.
+Those two are the important part and the reason to call this first. Every
+`from_domains_file` and every `from_regex_file` the rule references is **read at
+call time**, not echoed as a path. A rule can carry both, and both are always
+reported — reading only `domain_files` on a rule that also has a
+`from_regex_file` is how an agent ends up confidently describing half of what it
+collects.
+
+- `domain_files`: `path`, `exists`, `domains` (normalized and de-duplicated
+  exactly as the pipeline would parse them), `count`, `modified_at`, and a
+  `note` explaining why the list is empty when it is.
+- `pattern_files`: `path`, `exists`, `patterns` (the RE2 patterns in force, as
+  written in the file), `count`, `rejected`, `modified_at`, and a `note`.
+
+A missing file is an empty list plus a note, never an error.
+
+`rejected` counts the lines the breadth guards refused — a line that does not
+compile, or one that matches the empty string and so would match every message.
+It is not cosmetic: `count: 1, rejected: 11` means whatever generates that file
+is broken and the rule is subscribed to almost nothing. Say so to the operator
+rather than reporting the one surviving pattern as if it were the subscription.
+The rejected lines' text is not returned; `mail-muncher validate` prints it.
 
 This is how an agent answers "what am I currently subscribed to" and confirms
-that a change it just wrote to its own domain list took effect.
+that a change it just wrote to its own domain or pattern list took effect.
 
 ### `sync`
 
@@ -179,6 +195,14 @@ the same shape `run --json` writes; see `output.md`) and an optional `error`.
 4. `read_message` with `thread: true` — read the conversation, not the message.
 
 To change what mail arrives, do not look for a tool: **edit the
-`from_domains_file`** that `list_rules` named, then call `list_rules` again to
-confirm the new list, and `sync` to pull the mail it now matches. That file is
-the subscription API.
+`from_domains_file` or `from_regex_file`** that `list_rules` named, then call
+`list_rules` again to confirm the new list, and `sync` to pull the mail it now
+matches. Those files are the subscription API.
+
+Which file to edit: a domain list for a sender whose domain is known
+(`acme.com`), a pattern list for a company whose sending host is not
+predictable (`wagepoint` matches `wagepoint.teamtailor.com` and
+`careers@wagepoint-hr.example` alike). After writing a pattern, re-read
+`pattern_files` and check it appears in `patterns` — if `rejected` went up
+instead, the pattern was refused for being unparseable or for matching
+everything, and it is not in force.

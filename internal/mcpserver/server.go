@@ -22,7 +22,7 @@ const ServerName = "mail-muncher"
 // what the tools are for rather than restating their schemas.
 const instructions = `mail-muncher is an email client for agents: it archives mail matching your rules to disk, and these tools read that archive.
 
-Start with list_rules to see what is being collected and, for any rule driven by a from_domains_file, which senders are currently subscribed. Use list_messages to see what has arrived and search_messages to find something specific; both return summaries with a thread_id. Group by that id — a hiring process, a booking or a support case is a conversation, not a single message — and pass thread:true to read_message to get the whole exchange in order.
+Start with list_rules to see what is being collected and, for any rule driven by a from_domains_file or a from_regex_file, which senders are currently subscribed. Both kinds of list are read fresh on every call, so what it reports is what the next sync will match on. Use list_messages to see what has arrived and search_messages to find something specific; both return summaries with a thread_id. Group by that id — a hiring process, a booking or a support case is a conversation, not a single message — and pass thread:true to read_message to get the whole exchange in order.
 
 Everything here is read-only over stored mail. sync fetches new mail into the archive; it never sends, deletes or modifies anything in the mailbox.`
 
@@ -179,7 +179,8 @@ func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "list_rules",
 		Description: "List the configured rules: what each one collects, where it writes, and — read fresh on every call — " +
-			"the domains currently listed in any from_domains_file it uses. This is how to see what mail is being subscribed to right now.",
+			"the domains currently listed in any from_domains_file it uses and the patterns currently in force in any from_regex_file. " +
+			"This is how to see what mail is being subscribed to right now.",
 		Annotations: readOnly("List collection rules"),
 	}, func(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, ListRulesOutput, error) {
 		out, err := s.listRules()
