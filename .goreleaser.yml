@@ -128,7 +128,7 @@ release:
     Or download an archive below and verify it:
 
     ```sh
-    # 1. checksum
+    # 1. checksum -- on macOS use `shasum -a 256` instead of `sha256sum`
     sha256sum --check --ignore-missing checksums.txt
 
     # 2. signature over the checksum file (keyless, no key to fetch)

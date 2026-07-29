@@ -295,7 +295,9 @@ cosign verify-blob \
 ```
 
 `Verified OK` means the checksum file is authentic; the `sha256sum` step then
-ties your archive to it.
+ties your archive to it. cosign 3 prints a deprecation notice for
+`--certificate` and `--signature` — the check still runs, and these detached
+files are what cosign 2 understands too.
 
 ### `go install`
 
