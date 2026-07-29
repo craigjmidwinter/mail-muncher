@@ -656,6 +656,43 @@ MAIL.Umbrella.COM  # case is irrelevant
 The same matching rules apply to the inline `from_domains:` predicate; the only
 difference is who owns the list.
 
+### When a domain list cannot express it
+
+Some senders cannot be enumerated in advance. One company's mail might arrive
+from `wagepoint.teamtailor.com`, `mail.wagepoint.com` and
+`notifications@wagepoint-hr.example` — a domain list can only name hosts you
+already know about. `from_regex_file` is the same idea for patterns:
+
+```yaml
+match:
+  from_regex_file: ~/.local/share/jobsearch/companies.txt
+```
+
+```
+# one RE2 pattern per line, unanchored
+wagepoint
+(?i)^careers@acme\.io$
+teamtailor\.com$
+```
+
+Lifecycle is identical — read once per cycle, missing is never fatal,
+`on_degraded_filter` governs the cursor. Two deliberate differences from the
+domain format:
+
+- **Nothing is lowercased**, because a regex is case-sensitive by construction.
+  Write `(?i)` when you want otherwise.
+- **`#` only starts a comment at the start of a line.** Truncating a pattern at
+  a mid-line `#` would silently change what it matches.
+
+**The failure modes are opposites, and that is why the guards differ.** A typo
+in a domain list matches *nothing* — the cost is silence. A typo in a pattern
+list can match *everything*: `.*` or a stray blank claims the entire mailbox.
+So an empty pattern, or any pattern that matches the empty string, is refused
+outright; a pattern that fails to compile is refused **by itself** while the
+rest of the file stays in force; and the count of patterns loaded is logged
+every cycle, so a file that fell from twelve patterns to one catch-all is a
+number in your run output rather than a discovery by way of a full disk.
+
 ## Configuration
 
 Full reference: [docs/configuration.md](docs/configuration.md). Runnable files:
@@ -711,7 +748,7 @@ rules:
 | --- | --- | --- | --- |
 | `state_dir` | path | `~/.local/state/mail-muncher` | Sync cursors (one JSON file per account), the cycle lock, the instance lock, and the quarantine directory. |
 | `on_message_failure` | `quarantine`, `abort` | `quarantine` | What to do with a message that will not parse or that a sink failed on. See below. |
-| `on_degraded_filter` | `hold`, `fail`, `proceed` | `hold` | What to do when a rule's `from_domains_file` cannot be read. See below. |
+| `on_degraded_filter` | `hold`, `fail`, `proceed` | `hold` | What to do when a rule's `from_domains_file` or `from_regex_file` cannot be read. See below. |
 | `quarantine_dir` | path | `<state_dir>/quarantine` | Where quarantined messages are parked. |
 | `accounts` | list | — | Mailboxes to pull from. At least one is required. |
 | `accounts[].name` | string | — | Required, unique. Names the state file and is what `rules[].account` refers to. |
@@ -742,7 +779,7 @@ Notes that bite people:
 - **Unknown keys are a hard error.** A typo fails the load rather than being
   ignored, so `validate` catches `initial_lookbak` before a run does.
 - **`~` and `$VAR` are expanded** in every path-valued field, including
-  `from_domains_file` values inside a match tree. `~user` forms are not
+  `from_domains_file` and `from_regex_file` values inside a match tree. `~user` forms are not
   supported. An undefined variable expands to the empty string, as in a shell.
 - **`gmail.query` does not filter what gets kept, and applies to less than you
   think.** It is sent to Gmail on the **first-ever** scan of an account and
@@ -777,7 +814,7 @@ rendering its rule asked for failed to write.
 A quarantine write that itself fails falls back to `abort` semantics for that
 message — refusing to advance is recoverable, losing the message is not.
 
-**`on_degraded_filter`** — a rule's `from_domains_file` is missing, unreadable,
+**`on_degraded_filter`** — a rule's `from_domains_file` or `from_regex_file` is missing, unreadable,
 or truncated partway through. Such a file matches nothing, so without a policy
 every message that cycle would be evaluated against an empty list, found not to
 match, and consumed.
@@ -825,6 +862,7 @@ match:
 | `from_domains` | list of domains | any `From` address's domain equals or is a subdomain of a listed domain |
 | `from_domains_file` | path | same, with the list read from an externally-owned file each cycle |
 | `from_regex` | RE2 pattern | the pattern matches any `From` addr-spec (no display name) |
+| `from_regex_file` | path | same, with the patterns read from an externally-owned file each cycle |
 | `to_regex` | RE2 pattern | the pattern matches any `To` or `Cc` addr-spec |
 | `subject_regex` | RE2 pattern | the pattern matches the decoded `Subject` |
 | `header` | `{name: X-Foo, regex: ...}` | the pattern matches any value of that header |
@@ -844,6 +882,10 @@ One worked example each:
 
 # A specific sender, however they capitalize it.
 - from_regex: "(?i)^no-?reply@acme\\.com$"
+
+# Patterns owned and updated by another program, for senders whose host cannot
+# be enumerated in advance (wagepoint.teamtailor.com, mail.wagepoint.com).
+- from_regex_file: ~/.local/share/jobsearch/companies.txt
 
 # Anything addressed to a plus-alias you hand out to vendors.
 - to_regex: "(?i)^me\\+vendors@example\\.com$"
