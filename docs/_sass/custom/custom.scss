@@ -73,7 +73,7 @@ h2 code {
 
 // The theme gives the title 32px of horizontal padding at md and up, which
 // leaves 183px for a lockup that wants 204. Tighten it rather than let the
-// wordmark clip or the pixels land on a fractional scale.
+// wordmark clip.
 .site-title {
   padding-right: $sp-2;
   padding-left: $sp-4;
@@ -82,11 +82,18 @@ h2 code {
 // ------------------------------------------------------------- dark scheme --
 //
 // just-the-docs compiles one scheme per stylesheet and switches by swapping the
-// <link>, which flashes. Instead, the theme's own modules are re-imported here
-// inside a media query with the dark values bound, so light and dark ship in a
-// single stylesheet that the browser resolves before first paint. No JavaScript,
-// no toggle, no flash, and no rule left un-themed because someone forgot to
-// list its selector.
+// <link>, which flashes. Both schemes ship here in a single stylesheet instead,
+// so the browser resolves the colours before first paint: no JavaScript, no
+// toggle, no flash of light-mode colour for a dark-mode reader.
+//
+// The obvious implementation - re-import the theme's own modules inside this
+// block with dark values bound - does not survive GitHub Pages. Its Jekyll uses
+// Ruby Sass, which forbids a nested @import of any file containing a
+// root-only directive, and the theme's content.scss opens with @charset. So the
+// overrides below are explicit. They were not written from memory: the light
+// stylesheet was compiled and every declaration carrying a palette colour was
+// enumerated, which is the list reproduced here. Re-run that enumeration if the
+// theme is ever unpinned from just-the-docs v0.12.0.
 //
 // Contrast ratios, measured:
 //
@@ -97,68 +104,398 @@ h2 code {
 //   #F2765F Accent   on #17130F Paper     6.63:1  LINKS
 //   #F2765F Accent   on #221C18 Surface   6.04:1  links on surface
 //   #17130F Paper    on #F2765F Accent    6.63:1  primary button label
+
+$mm-d-paper: #17130f;
+$mm-d-ink: #f4efea;
+$mm-d-surface: #221c18;
+$mm-d-muted: #a79c93;
+$mm-d-accent: #f2765f;
+$mm-d-accent-deep: #e0533d;
+$mm-d-border: rgba(#a79c93, 0.28);
+$mm-d-rule: rgba(#a79c93, 0.5);
+
 @media (prefers-color-scheme: dark) {
-  $color-scheme: dark;
+  :root {
+    color-scheme: dark;
+  }
 
-  $body-background-color: #17130f; // Paper (dark)
-  $body-text-color: #f4efea; // Ink (dark)
-  $body-heading-color: #f4efea; // Ink (dark)
-  $link-color: #f2765f; // Accent (dark)
-  $nav-child-link-color: #a79c93; // Muted (dark)
-  $sidebar-color: #221c18; // Surface (dark)
-  $feedback-color: #221c18; // Surface (dark)
-  $base-button-color: #221c18; // Surface (dark)
-  $btn-primary-color: #e0533d; // Accent deep (dark)
-  $code-background-color: #221c18; // Surface (dark)
-  $table-background-color: #221c18; // Surface (dark)
-  $search-background-color: #221c18; // Surface (dark)
-  $search-result-preview-color: #a79c93; // Muted (dark)
-  $border-color: rgba(#a79c93, 0.28);
+  // --- page ----------------------------------------------------------------
+  body {
+    color: $mm-d-ink;
+    background-color: $mm-d-paper;
+  }
 
-  @import "./vendor/accessible-pygments/github-dark";
-  @import "./modules";
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  #toctitle {
+    color: $mm-d-ink;
+  }
+
+  a {
+    color: $mm-d-accent;
+  }
+
+  a:not([class]) {
+    text-decoration-color: $mm-d-border;
+  }
+
+  hr {
+    background-color: $mm-d-border;
+  }
+
+  blockquote {
+    border-left: 3px solid $mm-d-border;
+  }
+
+  // --- chrome --------------------------------------------------------------
+  .side-bar {
+    background-color: $mm-d-surface;
+  }
+
+  .side-bar + .main .main-header {
+    background-color: $mm-d-surface;
+  }
+
+  .main-header,
+  .nav-category {
+    border-bottom: 1px solid $mm-d-border;
+  }
+
+  @include mq(md) {
+    .side-bar {
+      border-right: 1px solid $mm-d-border;
+    }
+
+    .side-bar + .main .main-header {
+      background-color: $mm-d-paper;
+    }
+
+    .site-header {
+      border-bottom: 1px solid $mm-d-border;
+    }
+  }
+
+  .site-title {
+    color: $mm-d-ink;
+  }
+
+  .site-title:hover,
+  .nav-list .nav-list-item .nav-list-link:hover,
+  .nav-list .nav-list-item .nav-list-link.active {
+    background-image: linear-gradient(
+      -90deg,
+      rgba($mm-d-surface, 1) 0%,
+      rgba($mm-d-surface, 0.8) 80%,
+      rgba($mm-d-surface, 0) 100%
+    );
+  }
+
+  .site-button:hover,
+  .nav-list .nav-list-item .nav-list-expander:hover {
+    background-image: linear-gradient(
+      -90deg,
+      rgba($mm-d-surface, 1) 0%,
+      rgba($mm-d-surface, 0.8) 100%
+    );
+  }
 
   // The lockup wordmark is Ink, which has to invert with the page.
   .site-logo {
     background-image: url("../brand/lockup-dark.svg");
   }
 
-  // Re-state the display face: the re-import above brought the theme's own
-  // typography rules back in after the ones at the top of this file.
-  h1,
-  .text-alpha {
-    font-family: $mm-display;
-    font-size: 32px !important;
-    font-weight: 700;
-    line-height: 40px;
-    letter-spacing: 2px;
+  // --- navigation ----------------------------------------------------------
+  .icon,
+  .main-content .anchor-heading svg,
+  .nav-list .nav-list-item .nav-list-expander,
+  .nav-list.nav-category-list > .nav-list-item > .nav-list > .nav-list-item > .nav-list-link,
+  .nav-list.nav-category-list > .nav-list-item > .nav-list > .nav-list-item > .nav-list-expander {
+    color: $mm-d-accent;
   }
 
-  h2,
-  .text-beta {
-    font-family: $mm-display;
-    font-size: 24px !important;
-    font-weight: 700;
-    line-height: 32px;
-    letter-spacing: 1px;
+  .nav-list .nav-list-item > .nav-list .nav-list-item .nav-list-link,
+  .nav-list .nav-list-item > .nav-list .nav-list-item .nav-list-expander {
+    color: $mm-d-muted;
   }
 
-  h1 code,
-  h2 code {
-    font-family: $mono-font-family;
-    font-size: 0.8em;
-    font-weight: 400;
-    letter-spacing: 0;
-    text-transform: none;
+  // --- buttons and labels --------------------------------------------------
+  .btn {
+    color: $mm-d-accent;
+    background-color: $mm-d-surface;
   }
 
-  .site-logo {
-    background-size: auto 32px;
-    min-height: 32px;
+  .btn-outline {
+    color: $mm-d-accent;
   }
 
-  .site-title {
-    padding-right: $sp-2;
-    padding-left: $sp-4;
+  .label-red:not(g) {
+    background-color: $mm-d-accent-deep;
+  }
+
+  a.skip-to-main:focus,
+  a.skip-to-main:active {
+    color: $mm-d-accent;
+    background-color: $mm-d-paper;
+    border: 4px solid $mm-d-accent;
+  }
+
+  // --- search --------------------------------------------------------------
+  .search-input {
+    color: $mm-d-ink;
+    background-color: $mm-d-surface;
+  }
+
+  @include mq(md) {
+    .search-input {
+      background-color: $mm-d-surface;
+    }
+  }
+
+  .search-active .search-input,
+  .search-button,
+  .search-results {
+    background-color: $mm-d-surface;
+  }
+
+  .search-input:focus + .search-label .search-icon,
+  .search-result-doc .search-result-icon {
+    color: $mm-d-accent;
+  }
+
+  .search-result:hover,
+  .search-result.active {
+    background-color: $mm-d-paper;
+  }
+
+  .search-result-rel-url {
+    color: $mm-d-muted;
+  }
+
+  .search-result-previews {
+    color: $mm-d-muted;
+    border-left-color: $mm-d-border;
+  }
+
+  // --- tables --------------------------------------------------------------
+  th,
+  td {
+    background-color: $mm-d-surface;
+    border-bottom: 1px solid $mm-d-rule;
+    border-left: 1px solid $mm-d-border;
+  }
+
+  thead th {
+    border-bottom: 1px solid $mm-d-border;
+  }
+
+  // --- code ----------------------------------------------------------------
+  :not(pre, figure) > code {
+    background-color: $mm-d-surface;
+    border: 1px solid $mm-d-border;
+  }
+
+  a:visited code {
+    border-color: $mm-d-border;
+  }
+
+  div.highlighter-rouge,
+  div.listingblock > div.content,
+  figure.highlight,
+  .highlight .table-wrapper td,
+  .highlight .table-wrapper pre,
+  .highlight pre {
+    background-color: $mm-d-surface;
+  }
+
+  div.highlighter-rouge > button,
+  div.listingblock > div.content > button,
+  figure.highlight > button {
+    color: $mm-d-ink;
+  }
+
+  div.highlighter-rouge > button svg,
+  div.listingblock > div.content > button svg,
+  figure.highlight > button svg {
+    fill: $mm-d-ink;
+  }
+
+  div.highlighter-rouge > button:focus,
+  div.listingblock > div.content > button:focus,
+  figure.highlight > button:focus {
+    outline: 2px solid $mm-d-accent;
+  }
+
+  // The theme draws this edge in $body-text-color, which inverts to near-white
+  // and turns every code block into a glaring outlined box. Muted instead.
+  div.highlighter-rouge div.highlight,
+  div.listingblock div.content,
+  figure.highlight pre,
+  figure.highlight :not(pre) > code {
+    border: 1px solid $mm-d-muted;
+  }
+
+  .code-example,
+  .listingblock > .title {
+    border: 1px solid $mm-d-border;
+  }
+
+  .code-example + .highlighter-rouge,
+  .code-example + .sectionbody .listingblock,
+  .code-example + .content,
+  .code-example + figure.highlight,
+  .listingblock > .title + .highlighter-rouge,
+  .listingblock > .title + .sectionbody .listingblock,
+  .listingblock > .title + .content,
+  .listingblock > .title + figure.highlight {
+    border-right: 1px solid $mm-d-border;
+    border-bottom: 1px solid $mm-d-border;
+    border-left: 1px solid $mm-d-border;
+  }
+
+  // --- callouts ------------------------------------------------------------
+  //
+  // Generated from the theme's colour ramp, which _sass/custom/setup.scss
+  // retints. The light-side hues are too dark to carry on Paper (dark).
+  p.warning,
+  blockquote.warning,
+  p.warning-title,
+  blockquote.warning-title {
+    border-color: rgba($mm-d-accent, 0.5);
+    border-left-color: $mm-d-accent;
+  }
+
+  p.warning::before,
+  blockquote.warning::before,
+  .warning-title {
+    color: $mm-d-accent;
+  }
+
+  p.note,
+  blockquote.note,
+  p.note-title,
+  blockquote.note-title {
+    border-color: $mm-d-border;
+    border-left-color: $mm-d-muted;
+  }
+
+  p.note::before,
+  blockquote.note::before,
+  .note-title {
+    color: $mm-d-muted;
+  }
+
+  div.opaque {
+    background-color: $mm-d-paper;
+  }
+
+  // --- print ---------------------------------------------------------------
+  @media print {
+    .site-header,
+    pre.highlight {
+      border: 1px solid $mm-d-border;
+    }
+  }
+
+  // --- syntax highlighting -------------------------------------------------
+  //
+  // Verbatim from the theme's own vendored
+  // _sass/vendor/accessible-pygments/github-dark.scss, minus its `.highlight`
+  // base rule (the code background is ours). Copied rather than @imported
+  // because a nested @import is what broke the build in the first place, and
+  // the theme is pinned to just-the-docs v0.12.0 so this cannot drift silently.
+  //
+  //   generated by accessible-pygments <https://github.com/Quansight-Labs/accessible-pygments>
+  //   Copyright (c) 2022, Quansight Labs. Licensed under the BSD license.
+  //   generated by Pygments <https://pygments.org/>
+  //   Copyright 2006-2025 by the Pygments team. Licensed under the BSD license.
+  .highlight .hll { background-color: #6e7681; }
+  .highlight .c { color: #8B949E; font-style: italic; }
+  .highlight .err { color: #F85149; }
+  .highlight .esc { color: #E6EDF3; }
+  .highlight .g { color: #E6EDF3; }
+  .highlight .k { color: #FF7B72; }
+  .highlight .l { color: #A5D6FF; }
+  .highlight .n { color: #E6EDF3; }
+  .highlight .o { color: #FF7B72; font-weight: bold; }
+  .highlight .x { color: #E6EDF3; }
+  .highlight .p { color: #E6EDF3; }
+  .highlight .ch { color: #8B949E; font-style: italic; }
+  .highlight .cm { color: #8B949E; font-style: italic; }
+  .highlight .cp { color: #8B949E; font-weight: bold; font-style: italic; }
+  .highlight .cpf { color: #8B949E; font-style: italic; }
+  .highlight .c1 { color: #8B949E; font-style: italic; }
+  .highlight .cs { color: #8B949E; font-weight: bold; font-style: italic; }
+  .highlight .gd { color: #FFA198; background-color: #490202; }
+  .highlight .ge { color: #E6EDF3; font-style: italic; }
+  .highlight .ges { color: #E6EDF3; font-weight: bold; font-style: italic; }
+  .highlight .gr { color: #FFA198; }
+  .highlight .gh { color: #79C0FF; font-weight: bold; }
+  .highlight .gi { color: #56D364; background-color: #0F5323; }
+  .highlight .go { color: #8B949E; }
+  .highlight .gp { color: #8B949E; }
+  .highlight .gs { color: #E6EDF3; font-weight: bold; }
+  .highlight .gu { color: #79C0FF; }
+  .highlight .gt { color: #FF7B72; }
+  .highlight .g-Underline { color: #E6EDF3; text-decoration: underline; }
+  .highlight .kc { color: #79C0FF; }
+  .highlight .kd { color: #FF7B72; }
+  .highlight .kn { color: #FF7B72; }
+  .highlight .kp { color: #79C0FF; }
+  .highlight .kr { color: #FF7B72; }
+  .highlight .kt { color: #FF7B72; }
+  .highlight .ld { color: #79C0FF; }
+  .highlight .m { color: #A5D6FF; }
+  .highlight .s { color: #A5D6FF; }
+  .highlight .na { color: #E6EDF3; }
+  .highlight .nb { color: #E6EDF3; }
+  .highlight .nc { color: #F0883E; font-weight: bold; }
+  .highlight .no { color: #79C0FF; font-weight: bold; }
+  .highlight .nd { color: #D2A8FF; font-weight: bold; }
+  .highlight .ni { color: #FFA657; }
+  .highlight .ne { color: #F0883E; font-weight: bold; }
+  .highlight .nf { color: #D2A8FF; font-weight: bold; }
+  .highlight .nl { color: #79C0FF; font-weight: bold; }
+  .highlight .nn { color: #FF7B72; }
+  .highlight .nx { color: #E6EDF3; }
+  .highlight .py { color: #79C0FF; }
+  .highlight .nt { color: #7EE787; }
+  .highlight .nv { color: #79C0FF; }
+  .highlight .ow { color: #FF7B72; font-weight: bold; }
+  .highlight .pm { color: #E6EDF3; }
+  .highlight .w { color: #6E7681; }
+  .highlight .mb { color: #A5D6FF; }
+  .highlight .mf { color: #A5D6FF; }
+  .highlight .mh { color: #A5D6FF; }
+  .highlight .mi { color: #A5D6FF; }
+  .highlight .mo { color: #A5D6FF; }
+  .highlight .sa { color: #79C0FF; }
+  .highlight .sb { color: #A5D6FF; }
+  .highlight .sc { color: #A5D6FF; }
+  .highlight .dl { color: #79C0FF; }
+  .highlight .sd { color: #A5D6FF; }
+  .highlight .s2 { color: #A5D6FF; }
+  .highlight .se { color: #79C0FF; }
+  .highlight .sh { color: #79C0FF; }
+  .highlight .si { color: #A5D6FF; }
+  .highlight .sx { color: #A5D6FF; }
+  .highlight .sr { color: #79C0FF; }
+  .highlight .s1 { color: #A5D6FF; }
+  .highlight .ss { color: #A5D6FF; }
+  .highlight .bp { color: #E6EDF3; }
+  .highlight .fm { color: #D2A8FF; font-weight: bold; }
+  .highlight .vc { color: #79C0FF; }
+  .highlight .vg { color: #79C0FF; }
+  .highlight .vi { color: #79C0FF; }
+  .highlight .vm { color: #79C0FF; }
+  .highlight .il { color: #A5D6FF; }
+
+  .highlight,
+  pre.highlight {
+    color: $mm-d-ink;
+    background: $mm-d-surface;
   }
 }
