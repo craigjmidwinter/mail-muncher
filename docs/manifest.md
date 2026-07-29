@@ -1,3 +1,12 @@
+---
+title: The run manifest
+layout: default
+nav_order: 5
+description: >-
+  The machine-readable JSON record mail-muncher writes for every cycle. Field
+  names an agent codes against — stored, skipped, quarantined and summary.
+---
+
 # The run manifest
 
 `run --json` and `daemon --json` write a machine-readable record of every cycle

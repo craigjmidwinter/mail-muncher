@@ -1,3 +1,12 @@
+---
+title: Configuration reference
+layout: default
+nav_order: 3
+description: >-
+  Every key mail-muncher reads from its YAML config, what it defaults to, and
+  how it fails — accounts, rules, sinks, failure policies and path expansion.
+---
+
 # Configuration reference
 
 Every key mail-muncher reads, what it defaults to, and how it fails. For the

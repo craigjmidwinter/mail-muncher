@@ -1,3 +1,12 @@
+---
+title: The MCP server
+layout: default
+nav_order: 6
+description: >-
+  mail-muncher mcp serves the archive to an agent over the Model Context
+  Protocol on stdio — list_rules, list_messages, read_message, search, sync.
+---
+
 # The MCP server
 
 `mail-muncher mcp` serves the mail already on disk to an agent over the Model

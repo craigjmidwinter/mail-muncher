@@ -1,3 +1,12 @@
+---
+title: Filters
+layout: default
+nav_order: 4
+description: >-
+  The complete mail-muncher match-tree language — combinators, predicates and
+  what each one can see — plus a cookbook of filter rules that do real work.
+---
+
 # Filters
 
 The complete match-tree language, and a cookbook of rules that do real work.

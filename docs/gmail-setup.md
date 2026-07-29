@@ -1,3 +1,12 @@
+---
+title: Gmail setup
+layout: default
+nav_order: 2
+description: >-
+  Create your own Google Cloud OAuth client for mail-muncher and authorize it
+  with the single gmail.readonly scope. A one-time setup of about ten minutes.
+---
+
 # Gmail setup
 
 mail-muncher ships no OAuth client of its own. You create one in your own
