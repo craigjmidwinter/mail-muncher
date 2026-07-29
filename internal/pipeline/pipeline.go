@@ -50,6 +50,21 @@ func DefaultProviderFactory(ctx context.Context, account *config.Account) (provi
 	}
 }
 
+// vanishedReporter is implemented by providers that can tell the difference
+// between "nothing was there" and "something was listed and had been deleted by
+// the time we asked for it".
+//
+// The seam is a structural interface rather than a method on provider.Provider
+// because not every backend can know: it is the provider's business whether a
+// listed message disappearing is even observable. Implementing it is how a skip
+// that must never be silent reaches Summary.Vanished; not implementing it costs
+// nothing. Declared here, so the pipeline still names no backend.
+type vanishedReporter interface {
+	// VanishedCount reports the messages the most recent Fetch listed and then
+	// found no longer existed. It is read once, after Fetch returns.
+	VanishedCount() int
+}
+
 // ProviderError wraps a failure to reach or authenticate against a provider, as
 // opposed to a failure concerning one message. Callers distinguish it to pick
 // an exit status: the CLI maps it to exit 2, so cron can tell "your token
@@ -518,6 +533,13 @@ func (r *Runner) cycleAccount(ctx context.Context, account *config.Account, cyc 
 		}
 		return nil
 	})
+
+	// Read before the error switch below, so a cycle that vanished a message and
+	// *then* failed still reports the skip. A provider that cannot tell simply
+	// does not implement the interface, and the counter stays zero.
+	if vr, ok := prov.(vanishedReporter); ok {
+		manifest.Summary.Vanished = vr.VanishedCount()
+	}
 
 	var msgErr *MessageError
 	switch {

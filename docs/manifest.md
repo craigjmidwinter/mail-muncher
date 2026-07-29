@@ -224,7 +224,8 @@ mail-muncher run --json 2>/dev/null | jq -e 'select(.degraded == true) | halt_er
 
 ## `summary`
 
-Every key is always present.
+Every key below is always present except `vanished`, which appears only when it
+is non-zero.
 
 | Key | Counts | Meaning |
 | --- | --- | --- |
@@ -235,10 +236,23 @@ Every key is always present.
 | `parse_errors` | messages | Would not parse; logged and skipped. |
 | `sink_errors` | renderings | Write failures; logged and counted, the cycle continues. |
 | `quarantined` | messages | Parked under the quarantine directory. |
+| `vanished` | messages | Listed by the provider and then found to no longer exist — deleted from the mailbox between the listing and the download. Skipped, and the cursor advanced past them. **Only present when non-zero.** |
+
+`vanished` is its own counter because no other one is honest about it. The
+message never reached the pipeline, so it is not `fetched`; it has no rendering,
+so it is not `skipped`; and nothing failed, so it is not a `parse_error`. It is
+the only counter that describes mail that no longer exists, which is exactly
+what you need when a message you were expecting never arrived. Every skip is
+also logged at WARN with the account and the message id.
+
+A non-zero `vanished` is not a failed run. Skipping is what lets the cycle
+finish and the sync cursor move on; the alternative — refusing to advance past a
+message that can only ever answer 404 — pins the cursor forever.
 
 The counters work at two granularities on purpose:
 
-- `fetched`, `matched`, `parse_errors` and `quarantined` count **messages**.
+- `fetched`, `matched`, `parse_errors`, `quarantined` and `vanished` count
+  **messages**.
 - `stored`, `skipped` and `sink_errors` count **renderings** — (message ×
   format) pairs. A rule with `formats: [eml, markdown]` contributes two.
 
@@ -255,6 +269,8 @@ Two shapes worth recognising:
 - `fetched=0` — a steady-state cron run. Nothing new since the last cursor.
 - `matched=N stored=0 skipped=N` — a re-run over the same window. That is
   idempotency working.
+- `vanished=N` — N messages were deleted from the mailbox in the moment between
+  being listed and being downloaded. The cycle completed anyway.
 
 ## The human summary line
 
@@ -262,6 +278,13 @@ Without `--json`, stdout gets one line per account instead:
 
 ```
 personal: fetched=42 matched=3 stored=3 skipped=39 parse_errors=0 sink_errors=0 quarantined=0 duration=1.84s
+```
+
+`vanished=N` is appended after `quarantined=` in the runs where it applies, and
+omitted everywhere else — the same rule its JSON key follows:
+
+```
+personal: fetched=2 matched=2 stored=2 skipped=0 parse_errors=0 sink_errors=0 quarantined=0 vanished=1 duration=0.62s
 ```
 
 The field list runs contiguously from `fetched=` to `duration=`, so anything

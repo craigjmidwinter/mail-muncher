@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/craigjmidwinter/mail-muncher/internal/config"
@@ -94,7 +95,24 @@ type Provider struct {
 	svc     *gmailapi.Service
 	opts    FetchOptions
 	labels  labelCache
+
+	// vanished counts the messages the most recent Fetch listed and then found
+	// to be gone. Fetch resets it, download adds to it, VanishedCount reports
+	// it. It is atomic because the run summary is read from the caller's
+	// goroutine while the download pool is the thing that fills it.
+	vanished atomic.Int64
 }
+
+// VanishedCount reports how many messages the most recent Fetch listed and then
+// found no longer existed — deleted between the listing and the download, so
+// skipped rather than fetched.
+//
+// It is how a skip that must never be silent reaches the run summary. The
+// pipeline reads it through a one-method interface, so nothing outside this
+// package has to know it is Gmail-specific; a provider that cannot tell simply
+// does not implement it. Read it after Fetch returns; it describes that Fetch
+// only, including a Fetch that ended in an error.
+func (p *Provider) VanishedCount() int { return int(p.vanished.Load()) }
 
 // New builds a Provider for the account described by opts, authenticating with
 // the cached OAuth token (refreshing it as needed). If `auth` has never run the
@@ -188,6 +206,13 @@ func (p *Provider) Account() string { return p.account }
 // is never called concurrently. fn returning an error aborts the fetch; the
 // state accumulated so far comes back alongside the error.
 //
+// Note on messages that disappear mid-cycle: a listed message can be deleted
+// before the download reaches it, and users.messages.get then answers 404. That
+// one case is skipped rather than fatal, on both routes, so the cycle completes
+// and the cursor advances; anything else — 401, 403, 429, 5xx, transport
+// failures, cancellation — still aborts and still leaves the cursor where it
+// was. Skips are logged at WARN per message and counted by VanishedCount.
+//
 // Because both routes converge on that one format=RAW download, every delivered
 // RawMessage carries Gmail's `threadId` regardless of which route produced it,
 // and no route pays an extra request for it.
@@ -216,6 +241,10 @@ func (p *Provider) Fetch(ctx context.Context, state provider.SyncState, fn func(
 	if fn == nil {
 		return state, errors.New("gmail: Fetch requires a non-nil callback")
 	}
+
+	// The vanished counter describes one cycle, so it starts each Fetch at zero
+	// even when the Provider is reused.
+	p.vanished.Store(0)
 
 	out := state.Clone()
 	if err := ctx.Err(); err != nil {

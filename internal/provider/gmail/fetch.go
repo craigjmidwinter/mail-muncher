@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 	gmailapi "google.golang.org/api/gmail/v1"
+	"google.golang.org/api/googleapi"
 )
 
 // fullScan is the enumerate-the-mailbox path: it is what a first-ever run does
@@ -199,8 +201,10 @@ func (p *Provider) profileHistoryID(ctx context.Context) (uint64, error) {
 	return profile.HistoryId, nil
 }
 
-// fetchResult is one worker's outcome.
+// fetchResult is one worker's outcome. The id is carried alongside the message
+// because on the failure paths there is no message to read it off.
 type fetchResult struct {
+	id  string
 	msg provider.RawMessage
 	err error
 }
@@ -211,6 +215,19 @@ type fetchResult struct {
 // fn is called from a single goroutine, so sinks need no locking of their own.
 // The first error (a download failure or fn's own) cancels the pool, drains it,
 // and is returned; ids delivered before that stay marked seen in state.
+//
+// The one exception is a message that has been deleted since it was listed: its
+// 404 is skipped rather than returned, so the cycle completes and the cursor
+// advances past mail that no longer exists. Both routes reach this function, so
+// both get that behaviour — a message can disappear between users.history.list
+// and the download exactly as it can between users.messages.list and the
+// download. See errMessageVanished for why this case, and only this case, is
+// benign.
+//
+// A vanished id is deliberately not marked seen, for the same reason an excluded
+// one is not: the seen-set records what was delivered. Nothing re-fetches it
+// either — the cursor has moved past it, and no list call can name a message
+// that no longer exists.
 //
 // This is also where `gmail.include_spam_trash: false` bites on the incremental
 // route: a message that comes back wearing SPAM or TRASH is dropped instead of
@@ -282,7 +299,7 @@ func (p *Provider) download(ctx context.Context, ids []string, state *provider.S
 			for id := range idCh {
 				msg, err := p.getRaw(ctx, id)
 				select {
-				case resCh <- fetchResult{msg: msg, err: err}:
+				case resCh <- fetchResult{id: id, msg: msg, err: err}:
 				case <-ctx.Done():
 					return
 				}
@@ -297,6 +314,7 @@ func (p *Provider) download(ctx context.Context, ids []string, state *provider.S
 	var (
 		firstErr error
 		excluded int
+		vanished int
 	)
 	for res := range resCh {
 		if firstErr != nil {
@@ -304,6 +322,17 @@ func (p *Provider) download(ctx context.Context, ids []string, state *provider.S
 			continue
 		}
 		if res.err != nil {
+			if errors.Is(res.err, errMessageVanished) {
+				// The one download failure that is not a failure to download:
+				// the message was listed and has since been deleted. Aborting
+				// on it would pin the cursor on a window that can only ever
+				// produce the same 404, forever — see errMessageVanished.
+				vanished++
+				slog.Warn("gmail message was listed but no longer exists; skipping it",
+					"account", p.account, "id", res.id,
+					"detail", "it was deleted between the listing and the download; the cycle continues and the sync cursor advances past it")
+				continue
+			}
 			firstErr = res.err
 			cancel()
 			continue
@@ -331,6 +360,16 @@ func (p *Provider) download(ctx context.Context, ids []string, state *provider.S
 			"hint", "set gmail.include_spam_trash: true to fetch them")
 	}
 
+	// Vanished mail *is* counted for the run, unlike excluded mail: it is
+	// symmetric across both routes (a message can disappear between either list
+	// call and the download), and it is the one thing an operator needs to see
+	// to tell "nothing arrived" apart from "something arrived and then went
+	// away before we could read it". Fetch resets the counter, so it describes
+	// this cycle only.
+	if vanished > 0 {
+		p.vanished.Add(int64(vanished))
+	}
+
 	if firstErr != nil {
 		return firstErr
 	}
@@ -351,6 +390,10 @@ func (p *Provider) getRaw(ctx context.Context, id string) (provider.RawMessage, 
 			return p.svc.Users.Messages.Get(userID, id).Format("RAW").Context(ctx).Do()
 		})
 	if err != nil {
+		if messageGone(err) {
+			return provider.RawMessage{}, fmt.Errorf("%w: get message %s for account %q: %w",
+				errMessageVanished, id, p.account, err)
+		}
 		return provider.RawMessage{}, fmt.Errorf("gmail: get message %s for account %q: %w", id, p.account, err)
 	}
 
@@ -372,6 +415,54 @@ func (p *Provider) getRaw(ctx context.Context, id string) (provider.RawMessage, 
 		out.InternalDate = time.UnixMilli(msg.InternalDate).UTC()
 	}
 	return out, nil
+}
+
+// errMessageVanished marks the one users.messages.get failure that is not a
+// failure to fetch: a 404 for a message a list call had just named, because it
+// was deleted between the listing and the download.
+//
+// The distinction is the difference between a cycle that recovers and one that
+// cannot. Every other download failure aborts the fetch on purpose — a
+// *possibly* available message must never be passed over, because the cursor
+// would advance past mail that was never delivered, and silent mail loss is the
+// worst thing this tool can do. A 404 on a specific message is the opposite
+// evidence: the message is authoritatively gone, no retry and no later cycle can
+// produce it, and refusing to advance turns one deleted message into a permanent
+// wedge — the same window is re-listed, the same id 404s, and the cursor never
+// moves again. So this one case is skipped, loudly, and counted.
+//
+// It stays inside this package: download consumes it, so it never reaches a
+// caller and never needs to be part of the public API.
+var errMessageVanished = errors.New("gmail: message no longer exists")
+
+// reasonNotFound is the `reason` Gmail puts on a 404 error item.
+const reasonNotFound = "notFound"
+
+// messageGone reports whether an error from users.messages.get means that
+// particular message no longer exists.
+//
+// It is deliberately narrow: a 404 status, or Gmail's `notFound` reason on the
+// error body. 401, 403, 429, 5xx, transport failures and context cancellation
+// are all "we could not read it *this time*" and keep their existing
+// abort-the-cycle behaviour. Widening this predicate would convert a recoverable
+// stall into silent mail loss, so it must only ever mean "this message is gone".
+//
+// It is never applied to users.history.list, whose 404 means something else
+// entirely — an expired cursor — and is handled by isNotFound/ErrHistoryExpired.
+func messageGone(err error) bool {
+	var gerr *googleapi.Error
+	if !errors.As(err, &gerr) {
+		return false
+	}
+	if gerr.Code == http.StatusNotFound {
+		return true
+	}
+	for _, item := range gerr.Errors {
+		if item.Reason == reasonNotFound {
+			return true
+		}
+	}
+	return false
 }
 
 // rawCleaner strips the line breaks some responses wrap the base64 payload in.

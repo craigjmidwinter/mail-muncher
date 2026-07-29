@@ -183,6 +183,21 @@ type Summary struct {
 	// wrong, this counts what was done about it. A non-zero value is not a
 	// failed run, but it is always mail an operator has to look at.
 	Quarantined int `json:"quarantined"`
+	// Vanished is messages the provider listed and then found no longer
+	// existed — deleted from the mailbox between the listing and the download —
+	// so they were skipped and the cursor advanced past them.
+	//
+	// It gets its own counter rather than joining an existing one because none
+	// of them is honest about it: the message never reached the pipeline so it
+	// is not Fetched, it has no rendering so it is not Skipped (which counts
+	// files already on disk), and nothing failed so it is not a ParseError. It
+	// is also the only counter that describes mail that no longer exists, which
+	// is exactly the fact an operator needs when a message they expected never
+	// arrived.
+	//
+	// The JSON key is omitted when zero, so the published manifest contract is
+	// unchanged for every run in which nothing vanished.
+	Vanished int `json:"vanished,omitempty"`
 }
 
 // Add accumulates other into s, so a daemon can total several cycles.
@@ -194,19 +209,31 @@ func (s *Summary) Add(other Summary) {
 	s.ParseErrors += other.ParseErrors
 	s.SinkErrors += other.SinkErrors
 	s.Quarantined += other.Quarantined
+	s.Vanished += other.Vanished
 }
 
 // String renders the summary as the run's human one-liner:
 //
 //	fetched=42 matched=3 stored=3 skipped=39 parse_errors=0 sink_errors=0 quarantined=0
+//
+// `vanished=` is appended only when it is non-zero — the same rule its JSON key
+// follows — so the published field list is unchanged for every run in which
+// nothing disappeared, and impossible to miss in the runs where something did:
+//
+//	fetched=2 matched=2 stored=2 skipped=0 parse_errors=0 sink_errors=0 quarantined=0 vanished=1
 func (s Summary) String() string {
-	return fmt.Sprintf("fetched=%d matched=%d stored=%d skipped=%d parse_errors=%d sink_errors=%d quarantined=%d",
+	line := fmt.Sprintf("fetched=%d matched=%d stored=%d skipped=%d parse_errors=%d sink_errors=%d quarantined=%d",
 		s.Fetched, s.Matched, s.Stored, s.Skipped, s.ParseErrors, s.SinkErrors, s.Quarantined)
+	if s.Vanished > 0 {
+		line += fmt.Sprintf(" vanished=%d", s.Vanished)
+	}
+	return line
 }
 
-// LogArgs returns the summary as alternating slog key/value pairs.
+// LogArgs returns the summary as alternating slog key/value pairs. `vanished` is
+// present only when non-zero, matching String and the JSON key.
 func (s Summary) LogArgs() []any {
-	return []any{
+	args := []any{
 		"fetched", s.Fetched,
 		"matched", s.Matched,
 		"stored", s.Stored,
@@ -215,6 +242,10 @@ func (s Summary) LogArgs() []any {
 		"sink_errors", s.SinkErrors,
 		"quarantined", s.Quarantined,
 	}
+	if s.Vanished > 0 {
+		args = append(args, "vanished", s.Vanished)
+	}
+	return args
 }
 
 // Line renders the manifest as the run command's human summary line:

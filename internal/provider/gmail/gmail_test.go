@@ -44,6 +44,11 @@ type gmailStub struct {
 	// historyStatus, when non-zero, makes every history.list call fail with it.
 	historyStatus int
 	historyReason string
+	// historyHonorsStart makes users.history.list behave the way Gmail does:
+	// records at or below the requested startHistoryId are already covered by
+	// the caller's cursor and are not reported again. Off by default so the
+	// canned single-Fetch tests keep their fixed pages.
+	historyHonorsStart bool
 	// getFailures queues per-message statuses returned before the real message,
 	// and getReasons overrides the `reason` those failures report.
 	getFailures map[string][]int
@@ -138,6 +143,33 @@ func (s *gmailStub) addHistoryPage(token, next string, recordID, pageHistoryID u
 		HistoryId:     pageHistoryID,
 		NextPageToken: next,
 	}
+}
+
+// vanish deletes a message from the stub's store while leaving it in whatever
+// listing already named it, so users.messages.get answers 404 for an id the
+// provider has just been told about. That is exactly the race the fix is
+// about: a message deleted between the listing and the download.
+//
+// It stays deleted, so a second cycle that re-lists the id 404s again.
+func (s *gmailStub) vanish(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.messages, id)
+}
+
+// unlist removes an id from the evaluated mailbox, i.e. Gmail no longer reports
+// it from users.messages.list — which is what a real deleted message does on the
+// *next* run, after the one that raced with it.
+func (s *gmailStub) unlist(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.mailbox[:0]
+	for _, e := range s.mailbox {
+		if e.id != id {
+			kept = append(kept, e)
+		}
+	}
+	s.mailbox = kept
 }
 
 // mailboxEntry is one message in the stub's evaluated mailbox.
@@ -319,6 +351,9 @@ func (s *gmailStub) handler() http.Handler {
 		s.historyTypes = append(s.historyTypes, q.Get("historyTypes"))
 		status, reason := s.historyStatus, s.historyReason
 		page, ok := s.historyPages[token]
+		if ok && s.historyHonorsStart {
+			page = trimHistoryBefore(page, start)
+		}
 		after := s.afterHistory
 		s.mu.Unlock()
 		if after != nil {
@@ -343,6 +378,20 @@ func (s *gmailStub) handler() http.Handler {
 		writeAPIError(w, http.StatusNotImplemented, "notImplemented", "unexpected request "+r.Method+" "+r.URL.Path)
 	})
 	return mux
+}
+
+// trimHistoryBefore drops the records a caller starting at start has already
+// seen, the way Gmail does. The page's own historyId is left alone: it is the
+// mailbox watermark, not a record id, and it is what lets a run that finds
+// nothing still advance its cursor.
+func trimHistoryBefore(page *gmailapi.ListHistoryResponse, start uint64) *gmailapi.ListHistoryResponse {
+	out := &gmailapi.ListHistoryResponse{HistoryId: page.HistoryId, NextPageToken: page.NextPageToken}
+	for _, record := range page.History {
+		if record != nil && record.Id > start {
+			out.History = append(out.History, record)
+		}
+	}
+	return out
 }
 
 func (s *gmailStub) snapshot(f func(*gmailStub)) {

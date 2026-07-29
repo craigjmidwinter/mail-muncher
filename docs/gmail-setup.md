@@ -333,6 +333,24 @@ a **Desktop app** client. Create one that is
 project than the one that owns the OAuth client. Enable the Gmail API in the
 project shown in the error text.
 
+### Warning: `gmail message was listed but no longer exists; skipping it`
+
+A message was deleted from the mailbox in the moment between Gmail listing it
+and mail-muncher downloading it — you (or a filter, or another client) hit
+delete while a cycle was running. Gmail then answers 404 for that id, and no
+retry and no later cycle can produce it.
+
+mail-muncher logs the account and the message id, skips that one message, and
+carries on: the rest of the cycle is delivered and the sync cursor advances past
+the message that no longer exists. Nothing is stuck and there is nothing to do.
+The run's summary counts it under `vanished` — see
+[manifest.md](manifest.md#summary).
+
+This is the *only* download failure treated as benign, because it is the only
+one that is evidence about the message rather than about the connection. A 401,
+403, 429, 5xx or a dropped connection all still stop the cycle with the cursor
+where it was, so the mail behind them is re-fetched next run rather than skipped.
+
 ### Rate limits and quota
 
 mail-muncher retries 429s, 5xx, and rate-limited 403s with exponential backoff

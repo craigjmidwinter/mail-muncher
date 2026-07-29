@@ -926,15 +926,99 @@ func TestSummaryString(t *testing.T) {
 	require.Contains(t, held.Line(), "personal (degraded, state held): fetched=0")
 	stopped := Manifest{Account: "personal", Stopped: true}
 	require.Contains(t, stopped.Line(), "personal (stopped): fetched=0")
+
+	// `vanished=` appears only when a message was listed and then found to be
+	// gone, so the published field list is unchanged for every other run.
+	vanished := Summary{Fetched: 2, Matched: 2, Stored: 2, Vanished: 1}
+	require.Equal(t,
+		"fetched=2 matched=2 stored=2 skipped=0 parse_errors=0 sink_errors=0 quarantined=0 vanished=1",
+		vanished.String())
+	require.Contains(t, Manifest{Account: "personal", Summary: vanished}.Line(), "quarantined=0 vanished=1 duration=")
 }
 
 // TestSummaryAdd covers the daemon's multi-cycle totals.
 func TestSummaryAdd(t *testing.T) {
-	s := Summary{Fetched: 1, Matched: 2, Stored: 3, Skipped: 4, ParseErrors: 5, SinkErrors: 6, Quarantined: 7}
-	s.Add(Summary{Fetched: 10, Matched: 20, Stored: 30, Skipped: 40, ParseErrors: 50, SinkErrors: 60, Quarantined: 70})
+	s := Summary{Fetched: 1, Matched: 2, Stored: 3, Skipped: 4, ParseErrors: 5, SinkErrors: 6, Quarantined: 7, Vanished: 8}
+	s.Add(Summary{Fetched: 10, Matched: 20, Stored: 30, Skipped: 40, ParseErrors: 50, SinkErrors: 60, Quarantined: 70, Vanished: 80})
 	require.Equal(t,
-		Summary{Fetched: 11, Matched: 22, Stored: 33, Skipped: 44, ParseErrors: 55, SinkErrors: 66, Quarantined: 77},
+		Summary{Fetched: 11, Matched: 22, Stored: 33, Skipped: 44, ParseErrors: 55, SinkErrors: 66, Quarantined: 77, Vanished: 88},
 		s)
+}
+
+// vanishingFake is a provider that both delivers mail and reports messages it
+// listed and then found gone — what the Gmail provider does when a message is
+// deleted between the history listing and the download.
+type vanishingFake struct {
+	*provider.Fake
+	vanished int
+}
+
+func (f *vanishingFake) VanishedCount() int { return f.vanished }
+
+// TestVanishedMessagesReachTheSummary: a skip the provider made must be visible
+// in the run's output, and must not stop the cursor being saved — the cycle
+// completing is the whole point of skipping.
+func TestVanishedMessagesReachTheSummary(t *testing.T) {
+	cfg, _ := testConfig(t, config.Rule{
+		Name:  "everything",
+		Match: matchNode(t, "{from_domains: [acme.com]}"),
+	})
+
+	fake := provider.NewFake("gmail", provider.RawMessage{
+		ID:           "msg-1",
+		Raw:          rawMessage("recruiting@acme.com", "Still here", "hello"),
+		InternalDate: fixedNow,
+	})
+	fake.Now = fixedNow
+	fake.NextHistoryID = 1001
+	prov := &vanishingFake{Fake: fake, vanished: 2}
+
+	r, err := NewRunner(Options{
+		Config: cfg,
+		Providers: func(context.Context, *config.Account) (provider.Provider, error) {
+			return prov, nil
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:    func() time.Time { return fixedNow },
+	})
+	require.NoError(t, err)
+
+	manifests, err := r.Cycle(context.Background())
+	require.NoError(t, err)
+	require.Len(t, manifests, 1)
+
+	m := manifests[0]
+	require.Equal(t, 2, m.Summary.Vanished, "the skip is reported, never silent")
+	require.Equal(t, 1, m.Summary.Fetched, "a message that no longer exists was never fetched")
+	require.Contains(t, m.Line(), "vanished=2")
+
+	var buf strings.Builder
+	require.NoError(t, WriteJSON(&buf, m))
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(buf.String()), &got))
+	require.Equal(t, float64(2), got["summary"].(map[string]any)["vanished"])
+
+	// The cursor advanced and was saved: the cycle that contained a vanished
+	// message is a *complete* cycle.
+	saved, err := state.NewStore(cfg.StateDir).Load("personal")
+	require.NoError(t, err)
+	require.Equal(t, uint64(1001), saved.HistoryID)
+}
+
+// TestSummaryOmitsVanishedWhenZero pins the published JSON contract: the new key
+// is absent from every manifest of a run in which nothing disappeared, so an
+// existing consumer sees byte-identical output.
+func TestSummaryOmitsVanishedWhenZero(t *testing.T) {
+	var buf strings.Builder
+	require.NoError(t, WriteJSON(&buf, Manifest{Account: "personal", Summary: Summary{Fetched: 3}}))
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(buf.String()), &got))
+	summary := got["summary"].(map[string]any)
+	require.NotContains(t, summary, "vanished")
+	for _, key := range []string{"fetched", "matched", "stored", "skipped", "parse_errors", "sink_errors", "quarantined"} {
+		require.Contains(t, summary, key, "every existing key is still always present")
+	}
 }
 
 // TestExitCodeGrading pins the contract cron branches on.
