@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -47,6 +48,87 @@ import (
 // short patterns are "too broad" would start rejecting legitimate ones. The
 // per-cycle count log is the backstop for that case.
 
+// PatternFileStats is one read of a pattern list, accounted for: what ended up
+// in force, and what the breadth guards above refused.
+//
+// It exists because "eleven of your twelve patterns were refused" is a fact
+// only the parser knows, and a caller that is *reporting* on a file — `validate`,
+// the MCP server's list_rules — needs the number, not just the survivors. The
+// survivors alone cannot be diffed back into the count without a second copy of
+// this file's line conventions living somewhere else, and a second copy is a
+// second thing to keep in step.
+//
+// Every field describes the same single read of the same bytes, so the counts
+// can never disagree with Patterns.
+type PatternFileStats struct {
+	// Patterns are the compiled patterns in force, in file order, de-duplicated.
+	// Regexp.String returns the source text each was compiled from, so a caller
+	// can report the line as the owning program wrote it.
+	Patterns []*regexp.Regexp
+
+	// Rejected counts the lines the breadth guards refused: they do not compile,
+	// or they would match every message. A repeat of a bad line is counted every
+	// time it appears, because every one of them was refused; a repeat of a good
+	// line is not a rejection, because it was accepted and then collapsed.
+	Rejected int
+
+	// Total counts every line the parser considered — blank lines and full-line
+	// comments excluded, duplicates included.
+	//
+	// It is deliberately not len(Patterns)+Rejected: duplicates of an accepted
+	// pattern are read, accepted, and then collapsed into the one entry already
+	// in Patterns. "%d of %d rejected" reads off Rejected and Total; how many
+	// distinct patterns are in force reads off len(Patterns).
+	Total int
+
+	// Err is the degradation this read produced, and is nil only when every line
+	// of the file is in force. It is the same error Files.Degraded reports for
+	// this path: it names the offending lines, bounded by maxReportedBadLines,
+	// and it is also non-nil when the scan was truncated (a line over the 1 MiB
+	// cap), which is a case where Rejected is 0 but the tail of the file was
+	// never seen.
+	Err error
+}
+
+// ReadPatternFile reads and parses one `from_regex_file` pattern list, now.
+//
+// It is the exported form of the accounting: one os.ReadFile and one parse, so
+// the returned patterns and the returned counts describe the same bytes and
+// cannot drift apart. Deriving the count any other way — re-reading the file and
+// diffing it against the patterns that loaded — is two copies of this file's
+// line conventions in two packages, and only one of them has the tests.
+//
+// There is no receiver on purpose: this is the call-time read, outside the
+// per-cycle cache that Files keeps. An agent asking "what am I subscribed to
+// right now" must see the file as it is on disk this instant, not as it was when
+// the current cycle started.
+//
+// The returned error is the *read* failing — the file does not exist yet, is
+// unreadable, is a directory. That is not the same fact as the file parsing
+// badly, and callers render it differently: a file the owning program has not
+// written yet is an empty subscription with a note, while a file full of
+// uncompilable lines is a subscription that is quietly smaller than intended.
+// Parse degradation is therefore never returned here; it is PatternFileStats.Err,
+// next to the counts that quantify it.
+//
+// There is deliberately no ReadDomainFile beside this. "Rejected" is not a
+// concept a domain list has: no entry can fail to compile, and an entry that
+// does not look like a domain is kept and logged rather than refused, so the
+// only honest count a domain file could report is the one Files.Domains already
+// returns the list for. Adding a symmetrical function would mean adding a
+// Rejected field that is structurally always zero, which reads as a promise the
+// format cannot break.
+func ReadPatternFile(path string) (PatternFileStats, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return PatternFileStats{}, err
+	}
+	// Logging off: a call-time query is not a cycle. The "pattern list loaded"
+	// counter below is the pipeline's early warning that a generator broke, and
+	// emitting one per list_rules call would dilute the one signal that means it.
+	return patternFileStats(data, path, false), nil
+}
+
 // parsePatternList parses a newline-delimited list of RE2 patterns and compiles
 // each one, once. source only appears in log lines and in the returned error.
 func parsePatternList(data []byte, source string) ([]*regexp.Regexp, error) {
@@ -62,6 +144,15 @@ func parsePatternList(data []byte, source string) ([]*regexp.Regexp, error) {
 // non-nil only when something was rejected — names the offending lines. Callers
 // use the slice and report the error as degradation.
 func parsePatterns(data []byte, source string, log bool) ([]*regexp.Regexp, error) {
+	stats := patternFileStats(data, source, log)
+	return stats.Patterns, stats.Err
+}
+
+// patternFileStats is the parser. Everything else in this file that reads a
+// pattern list is a wrapper over it — parsePatterns keeps the two-value shape
+// the cache and `validate` were written against, ReadPatternFile hands the whole
+// accounting out — so there is exactly one place that knows what a line means.
+func patternFileStats(data []byte, source string, log bool) PatternFileStats {
 	var (
 		out      []*regexp.Regexp
 		seen     = make(map[string]bool)
@@ -114,17 +205,20 @@ func parsePatterns(data []byte, source string, log bool) ([]*regexp.Regexp, erro
 			"path", source, "patterns", len(out), "rejected", rejected)
 	}
 
-	if err := sc.Err(); err != nil {
-		return out, fmt.Errorf("truncated at line %d: %w", line, err)
-	}
-	if rejected > 0 {
+	stats := PatternFileStats{Patterns: out, Rejected: rejected, Total: total}
+	switch {
+	case sc.Err() != nil:
+		// Truncation wins: the rest of the file was never read, so a rejection
+		// count for the part that was is the smaller of the two problems.
+		stats.Err = fmt.Errorf("truncated at line %d: %w", line, sc.Err())
+	case rejected > 0:
 		if rejected > len(reasons) {
 			reasons = append(reasons, fmt.Sprintf("and %d more", rejected-len(reasons)))
 		}
-		return out, fmt.Errorf("%d of %d patterns rejected (%s)",
+		stats.Err = fmt.Errorf("%d of %d patterns rejected (%s)",
 			rejected, total, strings.Join(reasons, "; "))
 	}
-	return out, nil
+	return stats
 }
 
 // compileListPattern compiles one line of a pattern list and applies the

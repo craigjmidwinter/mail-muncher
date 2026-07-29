@@ -191,6 +191,122 @@ func TestParsePatternListReportsTruncation(t *testing.T) {
 	require.Equal(t, []string{"first"}, patternSources(got))
 }
 
+// TestReadPatternFileAccountsForWhatItRead is the contract list_rules reports:
+// the patterns in force and the number of lines refused come out of the same
+// parse, so they cannot describe different versions of the file or different
+// ideas of what a line means.
+func TestReadPatternFileAccountsForWhatItRead(t *testing.T) {
+	captureLogs(t)
+	path := writePatterns(t,
+		"# tracked companies\n"+
+			"wagepoint\n"+
+			"x?\n"+ // matches the empty string: refused
+			"teamtailor\\.com$\n"+
+			"foo(\n"+ // does not compile: refused
+			".*\n"+ // matches everything: refused
+			"wagepoint\n"+ // duplicate of an accepted pattern: read, then collapsed
+			"x?\n") // duplicate of a refused line: refused again
+
+	stats, err := ReadPatternFile(path)
+	require.NoError(t, err, "a file that parses badly is not a file that failed to read")
+
+	require.Equal(t, []string{"wagepoint", `teamtailor\.com$`}, patternSources(stats.Patterns))
+	require.Equal(t, 4, stats.Rejected,
+		"three bad lines plus the repeat of one; the repeat of a good line is not a rejection")
+	require.Equal(t, 7, stats.Total, "every non-blank, non-comment line, duplicates included")
+
+	// The three numbers are one accounting of one pass over the file, not three
+	// measurements that happen to agree: every line read was either refused or
+	// accepted, and an accepted line is either a new pattern or a duplicate of
+	// one already held.
+	accepted := stats.Total - stats.Rejected
+	require.Equal(t, 3, accepted)
+	require.LessOrEqual(t, len(stats.Patterns), accepted,
+		"patterns are the distinct survivors, so never more than the lines accepted")
+
+	require.Error(t, stats.Err, "the rejections reach the caller as degradation, not silence")
+	require.Contains(t, stats.Err.Error(), "4 of 7 patterns rejected")
+}
+
+// TestReadPatternFileCleanAndEmpty: nothing to report is reported as nothing.
+func TestReadPatternFileCleanAndEmpty(t *testing.T) {
+	captureLogs(t)
+
+	clean, err := ReadPatternFile(writePatterns(t, "wagepoint\nteamtailor\n"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"wagepoint", "teamtailor"}, patternSources(clean.Patterns))
+	require.Zero(t, clean.Rejected)
+	require.Equal(t, 2, clean.Total)
+	require.NoError(t, clean.Err)
+
+	// A file the owning program has written but not filled in is a subscription
+	// that matches nothing, not a failure of any kind.
+	empty, err := ReadPatternFile(writePatterns(t, "# nothing tracked right now\n"))
+	require.NoError(t, err)
+	require.Empty(t, empty.Patterns)
+	require.Zero(t, empty.Rejected)
+	require.Zero(t, empty.Total)
+	require.NoError(t, empty.Err)
+}
+
+// TestReadPatternFileSeparatesReadFailureFromParseFailure: the two are rendered
+// differently by every caller — a file that does not exist yet is an empty
+// subscription, a file of junk is a subscription quietly smaller than intended —
+// so they must not arrive on the same channel.
+func TestReadPatternFileSeparatesReadFailureFromParseFailure(t *testing.T) {
+	captureLogs(t)
+	dir := t.TempDir()
+
+	missing, err := ReadPatternFile(filepath.Join(dir, "not-created-yet.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+	require.Empty(t, missing.Patterns)
+	require.Zero(t, missing.Rejected)
+	require.Zero(t, missing.Total)
+	require.NoError(t, missing.Err, "there was nothing to parse, so there is no parse degradation")
+
+	_, err = ReadPatternFile(dir)
+	require.Error(t, err, "a directory is a read failure, not an empty pattern list")
+
+	// Whereas a file that read fine and parsed badly returns no error at all:
+	// the degradation is in the stats, next to the count that quantifies it.
+	bad, err := ReadPatternFile(writePatterns(t, "[unclosed\n"))
+	require.NoError(t, err)
+	require.Empty(t, bad.Patterns)
+	require.Equal(t, 1, bad.Rejected)
+	require.Error(t, bad.Err)
+}
+
+// TestReadPatternFileMatchesWhatThePipelineLoads: the reporting path and the
+// matching path must agree about what is in force, or list_rules is describing
+// a subscription the pipeline does not have.
+func TestReadPatternFileMatchesWhatThePipelineLoads(t *testing.T) {
+	captureLogs(t)
+	path := writePatterns(t, "# tracked\nwagepoint\n.*\nWagePoint\nticket#[0-9]+\n")
+
+	stats, err := ReadPatternFile(path)
+	require.NoError(t, err)
+	require.Equal(t, patternSources(NewFiles().Patterns(path)), patternSources(stats.Patterns),
+		"same parser, same guards, same de-duplication as a cycle would use")
+
+	// And it is the live file every time, not a cached one: unlike Files, there
+	// is no cycle to be inside of.
+	require.NoError(t, os.WriteFile(path, []byte("acme\n"), 0o600))
+	stats, err = ReadPatternFile(path)
+	require.NoError(t, err)
+	require.Equal(t, []string{"acme"}, patternSources(stats.Patterns))
+}
+
+// TestReadPatternFileIsQuiet: a call-time query is not a cycle. The "pattern
+// list loaded" counter is the pipeline's early warning that a generator broke,
+// and one per list_rules call would dilute the only signal that means it.
+func TestReadPatternFileIsQuiet(t *testing.T) {
+	logs := captureLogs(t)
+	_, err := ReadPatternFile(writePatterns(t, "wagepoint\n[unclosed\n"))
+	require.NoError(t, err)
+	require.NotContains(t, logs(), "pattern list loaded")
+	require.NotContains(t, logs(), "pattern list entry rejected")
+}
+
 func TestFromRegexFileMatching(t *testing.T) {
 	captureLogs(t)
 	// The motivating case: a company whose sending host cannot be enumerated.

@@ -1,13 +1,10 @@
 package mcpserver
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -149,6 +146,11 @@ func accountsFor(cfg *config.Config, rule *config.Rule) []string {
 // pipeline would match against — same comment handling, same `@` stripping,
 // same normalization and de-duplication. The nil receiver is deliberate: it
 // bypasses the per-cycle cache, so every call re-reads the file.
+//
+// There is no rejection count here to match the one resolvePatternFile reports,
+// and the asymmetry is the format's rather than an omission: no line of a domain
+// list can be refused — an entry that does not look like a domain is kept and
+// logged — so the length of the list is the whole accounting.
 func resolveDomainFile(path string) DomainFileInfo {
 	info := DomainFileInfo{Path: path, Domains: []string{}}
 
@@ -182,8 +184,18 @@ func resolveDomainFile(path string) DomainFileInfo {
 // the patterns reported are the ones the pipeline would actually match on:
 // same comment handling, same de-duplication, and — the part that matters —
 // the same breadth guards, so a line that would have matched every message is
-// reported as rejected here because it is rejected there too. The nil receiver
-// bypasses the per-cycle cache, so every call re-reads the file.
+// reported as rejected here because it is rejected there too.
+//
+// filter.ReadPatternFile does the whole job in one read and one parse: this
+// package does not know what a pattern line looks like, and must not learn.
+// Counting the rejections here instead — re-walking the file and diffing it
+// against the patterns that loaded — would be a second copy of the format's
+// conventions, in the package that does not own them and does not test them,
+// on a *reporting* path where a drift shows up as a plausible number rather
+// than a crash.
+//
+// The stat is for existence and mtime only; the patterns and the counts both
+// come from the single read below.
 func resolvePatternFile(path string) PatternFileInfo {
 	info := PatternFileInfo{Path: path, Patterns: []string{}}
 
@@ -200,15 +212,25 @@ func resolvePatternFile(path string) PatternFileInfo {
 		return info
 	}
 
+	// A read failure here is not a parse failure: the file was there a moment
+	// ago and is not readable now. It is reported the way the stat failure above
+	// is — an empty subscription with a note — never as a tool error, because the
+	// program that owns the file is free to be rewriting it.
+	stats, err := filter.ReadPatternFile(path)
+	if err != nil {
+		info.Note = "file could not be read; this predicate currently matches nothing"
+		return info
+	}
+
 	info.Exists = true
 	info.ModifiedAt = st.ModTime().UTC()
-	for _, re := range (*filter.Files)(nil).Patterns(path) {
+	for _, re := range stats.Patterns {
 		// Regexp.String returns the source text it was compiled from, so this
 		// is the line as the owning program wrote it, not a re-rendering.
 		info.Patterns = append(info.Patterns, re.String())
 	}
 	info.Count = len(info.Patterns)
-	info.Rejected = countRejected(path, info.Patterns)
+	info.Rejected = stats.Rejected
 	info.Note = patternNote(info.Count, info.Rejected)
 	return info
 }
@@ -238,48 +260,6 @@ func plural(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-// countRejected reports how many lines of a pattern list the filter package
-// refused.
-//
-// It is derived rather than reported because internal/filter does not export
-// the count: the nil-receiver read above returns the patterns that survived and
-// drops the parse error, and the error is only reachable through a live
-// Files.Degraded, as prose. So the census here re-walks the file with the same
-// line conventions the pattern parser uses — trim, skip blanks, `#` only at the
-// start of a line, same 1 MiB line cap — and calls a line rejected when its
-// text is not among the patterns that loaded. Duplicates of a loaded pattern
-// are not rejected, and repeats of a bad line each count, which is exactly how
-// the parser counts them.
-//
-// It is a second read of the file, so a file rewritten between the two reads
-// can be under-counted for one call. That is the same window the existing
-// stat-then-read of a domain list has, and the next call closes it.
-func countRejected(path string, loaded []string) int {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-
-	inForce := make(map[string]bool, len(loaded))
-	for _, p := range loaded {
-		inForce[p] = true
-	}
-
-	rejected := 0
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		text := strings.TrimSpace(sc.Text())
-		if text == "" || strings.HasPrefix(text, "#") {
-			continue
-		}
-		if !inForce[text] {
-			rejected++
-		}
-	}
-	return rejected
 }
 
 // domainFilePaths collects every `from_domains_file` value in a match tree.

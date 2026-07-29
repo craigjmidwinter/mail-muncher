@@ -2,7 +2,6 @@ package filter
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/craigjmidwinter/mail-muncher/internal/config"
 )
@@ -34,20 +33,20 @@ func describeFileProblems(predicate, path string) []string {
 		return nil
 	}
 
-	data, err := os.ReadFile(path)
+	// One read, one parse, logging off: `validate` is not a cycle, and the
+	// per-cycle load counters would be misleading in its output. ReadPatternFile
+	// is the same accounting list_rules reports, so the two never disagree about
+	// what a file contains.
+	stats, err := ReadPatternFile(path)
 	if err != nil {
 		return []string{fmt.Sprintf("cannot be read: %v", err)}
 	}
 
-	// Logging off: `validate` is not a cycle, and the per-cycle load counters
-	// would be misleading in its output.
-	patterns, perr := parsePatterns(data, path, false)
-
 	var out []string
-	if perr != nil {
-		out = append(out, perr.Error())
+	if stats.Err != nil {
+		out = append(out, stats.Err.Error())
 	}
-	if len(patterns) == 0 {
+	if len(stats.Patterns) == 0 {
 		out = append(out, "lists no usable patterns; this predicate matches nothing until it does")
 	}
 	return out
