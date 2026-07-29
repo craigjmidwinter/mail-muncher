@@ -249,10 +249,10 @@ and ships a skill that teaches an agent to use the tool:
 /plugin install mail-muncher@mail-muncher
 ```
 
-The bundled skill has not yet caught up with `provider: imap` or
-`mail-muncher init` and will walk you through Google Cloud rather than the
-two-minute route. Follow the [quickstart](#quickstart) above for IMAP; the
-binary supports it fully.
+The bundled skill teaches an agent the whole surface: choosing a provider,
+writing a config, declaring a subscription by maintaining a domain-list file,
+reading the delivered frontmatter, and wiring up the MCP server. It defaults to
+the IMAP route, same as the quickstart above.
 
 ## Documentation
 
