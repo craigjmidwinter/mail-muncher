@@ -18,10 +18,54 @@ re-reads at the start of every cycle. That other program changes one line in
 that file, and the very next cycle delivers different mail — no config edit, no
 restart, no redeploy.
 
-It runs one-shot for cron, or as a polling daemon, or as a stdio MCP server an
+It reads from any IMAP mailbox — Gmail, Fastmail, iCloud, Proton Bridge, a work
+account, your own server — or from Gmail's API with a read-only OAuth scope. It
+runs one-shot for cron, or as a polling daemon, or as a stdio MCP server an
 agent can query directly. Every mode emits the same machine-readable manifest of
-what it did. It requests exactly one OAuth scope, `gmail.readonly`: it cannot
-send, delete, label, or modify anything in your mailbox.
+what it did, and no mode ever writes to your mailbox.
+
+## Two ways to connect a mailbox
+
+Pick one before you install anything. Both are supported, and everything
+downstream — rules, formats, filenames, the archive layout, the MCP tools — is
+identical either way.
+
+| | `provider: imap` | `provider: gmail` |
+| --- | --- | --- |
+| Setup time | **~2 min** | **~10 min** in the Google Cloud Console |
+| What you register | nothing | your own Google Cloud project and Desktop-app OAuth client |
+| Credential | an app password from your provider's own settings page | an OAuth token, scope `gmail.readonly` |
+| How wide that credential is | **a full mail credential.** An app password can send and delete | read-only, and nothing else |
+| Who enforces read-only | **mail-muncher's own code** | **Google** |
+| Expiry | none | **every 7 days** on a Testing-mode consent screen; `mail-muncher auth` has to be re-run weekly |
+| Where the secret lives | wherever your password manager already keeps it: `password_cmd` is run and its stdout is the password. There is deliberately no `password` key | `token.json`, mode 0600, written by `mail-muncher auth` |
+| Which mailboxes | the folders you list in `mailboxes:`; `[INBOX]` by default | the whole Gmail account, minus Spam and Trash unless you ask for them |
+| Works with | Gmail, Fastmail, iCloud, Proton Bridge, work accounts, self-hosted | Gmail only |
+| Extra steps | none. There is no `auth` command on this path | `mail-muncher auth`, after [docs/gmail-setup.md](docs/gmail-setup.md) |
+
+The ~2 min / ~10 min / 7 days above are the same numbers `mail-muncher init`
+and the unconfigured-run guidance print, because they are the numbers that
+decide this.
+
+**The read-only guarantee is real on both paths, but it is not the same
+guarantee, and flattening the two would be dishonest.**
+
+- **Gmail: enforced by Google.** The only scope requested is `gmail.readonly`.
+  The token that comes back is *incapable* of sending, deleting, labelling or
+  modifying — not because mail-muncher declines to, but because Google will
+  refuse the call. A bug in this program cannot reach your mailbox.
+- **IMAP: enforced by mail-muncher.** IMAP has no read-only credential to ask
+  for. An app password is a full mail credential; the protocol will happily let
+  its holder delete a folder. What mail-muncher does instead is refuse to: every
+  folder is opened with `EXAMINE` and never `SELECT`, every body is fetched with
+  `BODY.PEEK[]` and never `BODY[]` (so mail is never marked read), and there is
+  no code path anywhere in the provider that issues `STORE`, `APPEND` or
+  `EXPUNGE`. Both belts are worn because a server is not obliged to protect a
+  client from itself. That is a strong guarantee and an auditable one — it is
+  just this program's guarantee, not your mail provider's.
+
+If you have no specific reason to want the Gmail API, start with IMAP. It works
+on a Gmail account too, and it is the path the quickstart takes.
 
 ## The problem
 
@@ -149,9 +193,12 @@ Full contract: [docs/manifest.md](docs/manifest.md).
 
 Three properties make this safe to put in an autonomous loop:
 
-- **Read-only by construction.** The only OAuth scope requested is
-  `gmail.readonly`. Whatever consumes the output — and whatever bug it has —
-  cannot send, delete, or modify mail.
+- **Read-only by construction.** Nothing in mail-muncher writes to a mailbox.
+  On Gmail that is Google's enforcement of the `gmail.readonly` scope; on IMAP
+  it is `EXAMINE` and `BODY.PEEK[]` and no write path at all. Either way,
+  whatever consumes the output — and whatever bug it has — cannot send, delete,
+  or modify mail. See [the comparison above](#two-ways-to-connect-a-mailbox)
+  for which of those two guarantees you are getting.
 - **Idempotent delivery.** A message's filename embeds a digest of
   `account + ":" + message id`, so its destination path is a pure function of
   its identity. A file that is already there means "an earlier cycle stored
@@ -195,7 +242,15 @@ Five tools:
 It is read-only over mail: no tool sends, deletes, or modifies anything, and
 `sync` — the only tool that changes anything at all — can only add files.
 Filesystem access is jailed to the configured rule `dest` roots, so the config,
-the OAuth token, and the state directory are unreachable and unnamed.
+any stored credential, and the state directory are unreachable and unnamed.
+
+**An unconfigured `mcp` server starts anyway, and that is deliberate.** If a
+client launches `mail-muncher mcp` before there is a config, the server does
+*not* exit — it completes the handshake, registers the same five tool names, and
+answers every call with the setup guidance as a tool error, so the agent has
+something to relay instead of "server failed to start". If you are wiring this
+up for an operator, that is expected behaviour and not a bug to file. The
+guidance also goes to stderr at startup, where clients tee the server log.
 
 Full reference, client wiring, and every argument and return field:
 [docs/mcp.md](docs/mcp.md).
@@ -324,8 +379,11 @@ make build          # -> ./mail-muncher, version stamped from git describe
 [goreleaser](https://goreleaser.com)) if you want to check what a release would
 contain.
 
-The example configs referenced below live in [`examples/`](examples/); they are
-also bundled inside every release archive, so a binary download has them too.
+The example configs referenced below live in [`examples/`](examples/) —
+[`imap.yml`](examples/imap.yml), [`minimal.yml`](examples/minimal.yml) and
+[`job-search.yml`](examples/job-search.yml). They are also bundled inside every
+release archive, so a binary download has them too. You do not need them to get
+started, though: `mail-muncher init` writes a config from scratch.
 
 ### As a Claude Code skill
 
@@ -335,41 +393,132 @@ writing the config, running `auth`, and wiring the MCP server into your client.
 If that is how you want to adopt it, start there instead of the quickstart
 below.
 
+**The bundled skill still only knows the Gmail path** and has not yet caught up
+with `provider: imap` or `mail-muncher init`. It will walk you through Google
+Cloud rather than offering the two-minute route. Until it is updated, follow the
+[quickstart](#quickstart) here if you want IMAP; the binary itself supports it
+fully.
+
 ## Quickstart
 
-Ten minutes, end to end. Steps 2 and 3 are the only ones that need a browser.
+About five minutes, no browser, no clone. This is the IMAP path; for the Gmail
+API instead, read [Quickstart: Gmail](#quickstart-gmail) below **before** you
+start, because it costs about ten minutes in the Google Cloud Console and the
+token expires weekly.
 
-**1. Build and write a config.**
+**0. Check the install.** Right after installing, before there is any config:
 
 ```bash
-make build
-mkdir -p ~/.config/mail-muncher
-cp examples/minimal.yml ~/.config/mail-muncher/config.yml
+mail-muncher run
+```
+
+That is a genuinely useful smoke test rather than a mistake. It exits 1 and
+tells you exactly where it looked, what to run next, and what each provider
+costs:
+
+```
+mail-muncher is not configured.
+  missing config file: /Users/you/.config/mail-muncher/config.yml
+  next command:        mail-muncher init
+  then:                mail-muncher validate && mail-muncher run --dry-run
+
+init asks which provider to use. Both are supported; the costs differ.
+  provider: imap   ~2 min. Gmail, Fastmail, Proton Bridge, work accounts,
+    self-hosted. Needs an app password, which is a broader credential than a
+    read-only OAuth token; mail-muncher only ever issues BODY.PEEK.
+  provider: gmail  ~10 min in the Google Cloud Console: gmail.readonly is a
+    Google restricted scope, so mail-muncher ships no OAuth client and you
+    register your own. Google enforces read-only, but on a Testing-mode
+    consent screen the refresh token expires every 7 days, so
+    "mail-muncher auth" must be re-run weekly. Read docs/gmail-setup.md.
+Docs: https://craigjmidwinter.github.io/mail-muncher/
+```
+
+Every command that needs a config says this, so a broken install and an
+unconfigured one never look alike.
+
+**1. Get an app password.** From your mail provider's own settings page —
+Gmail, Fastmail, iCloud, Proton, your work account. It is scoped to this one
+use and you can revoke it without touching anything else. Put it wherever you
+already keep secrets:
+
+```bash
+# macOS Keychain
+security add-generic-password -s mail-muncher -a "$USER" -w
+
+# or pass, 1Password, secret-tool, gpg — anything that prints it on stdout
+```
+
+mail-muncher never stores this. It runs a command you name and reads the
+password off that command's stdout, so the secret stays in your password
+manager. There is deliberately no `password:` key in the config schema.
+
+**2. Write a config.**
+
+```bash
+mail-muncher init --provider imap
+```
+
+```
+Account name [personal]:
+Write matched mail to [~/Mail/mail-muncher]:
+Wrote /Users/you/.config/mail-muncher/config.yml
+
+Next, for provider imap:
+  1. Edit imap.host, imap.username and imap.password_cmd in:
+       /Users/you/.config/mail-muncher/config.yml
+     Create an app password with your mail provider and store it where
+     password_cmd can read it.
+  2. Run that same password_cmd in a shell and check it prints the password
+     and nothing else, for example:
+       security find-generic-password -s mail-muncher -w | cat -A
+     Anything else on stdout - a prompt, a warning, a trailing blank line -
+     becomes part of the password and the login fails.
+  3. mail-muncher validate
+  4. mail-muncher run --dry-run     then     mail-muncher run
+Matched mail lands in ~/Mail/mail-muncher
+Docs: https://craigjmidwinter.github.io/mail-muncher/
+```
+
+`init` is interactive by default and asks three questions — provider, account
+name, destination. Add `--account NAME` and `--dest DIR` to answer them up
+front, or `--yes` to take every default. `--yes` still requires `--provider`:
+the two paths cost different things, so there is no honest default to pick on
+your behalf. An existing config is never overwritten without `--force`.
+
+The whole thing scripts, which is what an installing agent wants:
+
+```bash
+mail-muncher init --provider imap --yes
 ```
 
 `~/.config/mail-muncher/config.yml` is the default path; `--config` overrides
-it everywhere.
+it everywhere, including for `init`.
 
-**2. Create a Google OAuth client.** mail-muncher ships no OAuth client of its
-own — you create one, in your own Google Cloud project, and it stays yours.
-Follow [docs/gmail-setup.md](docs/gmail-setup.md): create a project, enable the
-Gmail API, configure the consent screen, create a **Desktop app** OAuth client,
-and download its JSON to `~/.config/mail-muncher/credentials.json`.
+**3. Fill in three values.** Open the file `init` just wrote and set
+`imap.host`, `imap.username` and `imap.password_cmd`. It is commented
+throughout, and [`examples/imap.yml`](examples/imap.yml) is a fuller worked
+version:
 
-**3. Authorize.**
-
-```bash
-./mail-muncher auth --account personal
+```yaml
+accounts:
+  - name: personal
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      username: you@fastmail.com
+      password_cmd: security find-generic-password -s mail-muncher -w
+      mailboxes: [INBOX]
 ```
 
-This prints a consent URL (and tries to open a browser), listens on a loopback
-port for the redirect, and writes the token to the account's `token_file` with
-mode 0600.
+Run that `password_cmd` in a shell first and check it prints the password and
+nothing else — `| cat -A` makes a stray prompt or trailing blank line visible.
+Anything extra on stdout becomes part of the password and the login fails.
 
 **4. Check the config.**
 
 ```bash
-./mail-muncher validate
+mail-muncher validate
 ```
 
 ```
@@ -378,9 +527,12 @@ config: /Users/you/.config/mail-muncher/config.yml
 OK
 ```
 
-`validate` parses the config, compiles every rule's match tree, and checks the
-files it references. Missing files that another program owns — the OAuth
-credentials, the token, a `from_domains_file` — are warnings, not errors:
+An IMAP account validates clean: no credential file to find, no token to have
+written yet, nothing on disk at all. `OK` with no warnings is the expected
+result. `validate` parses the config, compiles every rule's match tree, and
+checks the files it references. Missing files that another program owns — a
+`from_domains_file`, or on the Gmail path the OAuth credentials and token — are
+warnings, not errors:
 
 ```
 warning: rules[0].match.any[0].from_domains_file: file does not exist yet: /Users/you/.local/share/jobsearch/domains.txt (it is maintained by another program; the rule matches nothing until it appears)
@@ -390,25 +542,70 @@ OK with 1 warning
 **5. See what a real run would do.**
 
 ```bash
-./mail-muncher run --dry-run
+mail-muncher run --dry-run
 ```
 
-A dry run fetches and evaluates exactly as a real run does, and reports the
-path each match *would* be written to. It writes no files and does not save
-sync state, so you can run it as many times as you like.
+A dry run connects, fetches and evaluates exactly as a real run does, and
+reports the path each match *would* be written to. It writes no files and does
+not save sync state, so you can run it as many times as you like. This is also
+where a wrong host, username or `password_cmd` surfaces, named exactly:
+
+```
+error: account "personal": imap: password_cmd "security find-generic-password -s mail-muncher -w" failed: exit status 44: security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.
+```
 
 **6. Run it.**
 
 ```bash
-./mail-muncher run
+mail-muncher run
 ```
 
-Then run it again — everything already on disk reports as skipped, and the
-incremental cursor means the second run barely talks to Gmail at all.
+The config `init` wrote carries one starter rule matching everything newer than
+72h, so this first run is guaranteed to store something — a run that stores
+nothing is indistinguishable from a broken install. Then run it again:
+everything already on disk reports as `skipped`, and the incremental cursor
+means the second run barely talks to the server at all.
 
-Once that works, put it on a schedule (see [Scheduling](#scheduling)) and read
-[docs/configuration.md](docs/configuration.md) and
-[docs/filters.md](docs/filters.md) to write real rules.
+Once that works, narrow the starter rule into what you actually want
+([docs/filters.md](docs/filters.md)), then put it on a schedule (see
+[Scheduling](#scheduling)). [docs/configuration.md](docs/configuration.md) has
+every key.
+
+### Quickstart: Gmail
+
+Take this path if you specifically want the Gmail API and a read-only guarantee
+enforced by Google rather than by this program. **Know the two costs before you
+begin**, because both are structural and neither goes away:
+
+- **About ten minutes in the Google Cloud Console, up front.** `gmail.readonly`
+  is a Google *restricted* scope, so mail-muncher ships no OAuth client and
+  never will — you register your own project and Desktop-app client and
+  download its JSON.
+- **The token expires every 7 days.** Google applies that to every consent
+  screen still in Testing mode, which yours will be. `mail-muncher auth` has to
+  be re-run weekly. There is no setting that removes it;
+  [docs/gmail-setup.md](docs/gmail-setup.md#the-seven-day-refresh-token-expiry)
+  explains why and what the alternatives cost.
+
+If neither is worth it to you, the IMAP path above works on a Gmail account.
+
+```bash
+mail-muncher init --provider gmail        # prints the cost warning, then writes the config
+# → follow docs/gmail-setup.md: project, Gmail API, consent screen,
+#   Desktop app OAuth client, save its JSON as
+#   ~/.config/mail-muncher/credentials.json
+mail-muncher auth --account personal      # browser consent; writes token.json 0600
+mail-muncher validate
+mail-muncher run --dry-run
+mail-muncher run
+```
+
+`auth` prints a consent URL (and tries to open a browser), listens on a
+loopback port for the redirect, and writes the token to the account's
+`token_file` with mode 0600. It is a Gmail-only command — on an IMAP account it
+refuses, because there is nothing to authorize. Steps 4 through 6 of the IMAP
+quickstart above then apply unchanged; `validate` will report two warnings until
+the credentials and token files exist.
 
 ## Externally-managed filter files
 
@@ -454,7 +651,28 @@ difference is who owns the list.
 
 ## Configuration
 
-Full reference: [docs/configuration.md](docs/configuration.md).
+Full reference: [docs/configuration.md](docs/configuration.md). Runnable files:
+[`examples/imap.yml`](examples/imap.yml),
+[`examples/minimal.yml`](examples/minimal.yml),
+[`examples/job-search.yml`](examples/job-search.yml).
+
+The account block is the only part that differs by provider. IMAP:
+
+```yaml
+accounts:
+  - name: personal
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      port: 993                  # default
+      tls: true                  # default
+      username: you@fastmail.com
+      password_cmd: pass show mail/fastmail   # stdout is the password
+      mailboxes: [INBOX, Archive]             # default [INBOX]
+      initial_lookback: 720h                  # default
+```
+
+Gmail:
 
 ```yaml
 state_dir: ~/.local/state/mail-muncher
@@ -490,13 +708,21 @@ rules:
 | `quarantine_dir` | path | `<state_dir>/quarantine` | Where quarantined messages are parked. |
 | `accounts` | list | — | Mailboxes to pull from. At least one is required. |
 | `accounts[].name` | string | — | Required, unique. Names the state file and is what `rules[].account` refers to. |
-| `accounts[].provider` | `gmail` | `gmail` | The only recognized value today. |
-| `accounts[].gmail` | mapping | — | Required when the provider is `gmail`. |
+| `accounts[].provider` | `imap`, `gmail` | `gmail` | Which backend fetches. See [Two ways to connect a mailbox](#two-ways-to-connect-a-mailbox). |
+| `accounts[].imap` | mapping | — | Required — and only permitted — when the provider is `imap`. |
+| `accounts[].imap.host` | string | — | Required. `imap.fastmail.com`, `imap.gmail.com`, `127.0.0.1` for the Proton Bridge. |
+| `accounts[].imap.port` | integer | `993` | 993 is implicit TLS (IMAPS) and pairs with the `tls: true` default. |
+| `accounts[].imap.username` | string | — | Required. Usually the full address; some providers want the bare local part. |
+| `accounts[].imap.password_cmd` | shell command | — | Required. Run under `/bin/sh -c`; its stdout is the password. **There is deliberately no `password` key** — the secret stays in your password manager. |
+| `accounts[].imap.mailboxes` | list of strings | `[INBOX]` | Folders to fetch, each with its own cursor. A name doubles as the `label` predicate value. A folder the server does not have is an error, not an empty folder. |
+| `accounts[].imap.tls` | boolean | `true` | Implicit TLS on connect. `false` sends the password and every body in the clear; `validate` warns. Legitimate only on loopback or behind an stunnel. |
+| `accounts[].imap.initial_lookback` | Go duration | `720h` | How far back a first-ever sync of each mailbox reaches, and again after any UIDVALIDITY change. Must be positive. |
+| `accounts[].gmail` | mapping | — | Required — and only permitted — when the provider is `gmail`. |
 | `accounts[].gmail.credentials_file` | path | — | Required. The OAuth **client** JSON downloaded from Google Cloud. |
 | `accounts[].gmail.token_file` | path | — | Required. Where `auth` caches the OAuth token, mode 0600. |
 | `accounts[].gmail.query` | string | none | Optional Gmail search expression. A cost optimization for the **first-ever** scan only — see below. |
 | `accounts[].gmail.initial_lookback` | Go duration | `720h` | How far back the first-ever scan reaches. Must be positive. See [Backfill](#backfill-the-first-run). |
-| `accounts[].gmail.include_spam_trash` | boolean | `false` | Fetch messages in Spam and Trash. Honoured identically by both sync paths. `validate` warns when true. See [Spam and Trash](#spam-and-trash). |
+| `accounts[].gmail.include_spam_trash` | boolean | `false` | Fetch messages in Spam and Trash. Honoured identically by both Gmail sync paths. `validate` warns when true. See [Spam and Trash](#spam-and-trash-gmail). |
 | `rules` | list | — | Evaluated in order against every message; first match wins. |
 | `rules[].name` | string | — | Required, unique. Appears in logs and in markdown frontmatter. |
 | `rules[].account` | string | all accounts | Restricts the rule to one account. |
@@ -516,11 +742,17 @@ Notes that bite people:
   nowhere else — not on incremental cycles, and not on a recovery scan after the
   history cursor expires. It is never re-applied locally. Your rules are the
   only authority on what is stored. Keep the query broad, or omit it.
-- **Spam and Trash are not fetched by default.** Both sync paths agree on this:
-  full scans pass `includeSpamTrash=false`, and the incremental path drops
-  messages labelled `SPAM` or `TRASH` before they reach the pipeline. Set
-  `gmail.include_spam_trash: true` to fetch them anyway — see
-  [Spam and Trash](#spam-and-trash).
+- **Spam and Trash are not fetched by default (Gmail).** Both Gmail sync paths
+  agree on this: full scans pass `includeSpamTrash=false`, and the incremental
+  path drops messages labelled `SPAM` or `TRASH` before they reach the pipeline.
+  Set `gmail.include_spam_trash: true` to fetch them anyway — see
+  [Spam and Trash](#spam-and-trash-gmail). On IMAP there is no equivalent key: you
+  fetch exactly the folders you list in `mailboxes:`, so simply not listing the
+  junk folder is the whole mechanism.
+- **The `gmail:` and `imap:` blocks are mutually exclusive.** Setting the one
+  that does not match `provider:` is a hard error rather than a silently ignored
+  block, so an `imap:` block under a Gmail account cannot leave you believing
+  you are fetching over IMAP when you are not.
 
 ### Policies for the two things that can go wrong
 
@@ -590,7 +822,7 @@ match:
 | `subject_regex` | RE2 pattern | the pattern matches the decoded `Subject` |
 | `header` | `{name: X-Foo, regex: ...}` | the pattern matches any value of that header |
 | `has_attachment` | `true` / `false` | the message does (or does not) carry a real attachment |
-| `label` | label name | the message carries that provider label, compared exactly |
+| `label` | label name | the message carries that provider label, compared exactly. On Gmail that is a Gmail label; on IMAP it is the name of the mailbox the message came from |
 | `older_than` | Go duration | the message `Date` is further in the past than the duration |
 | `newer_than` | Go duration | the message `Date` is more recent than the duration |
 
@@ -618,8 +850,10 @@ One worked example each:
 # Only messages that actually carry a file.
 - has_attachment: true
 
-# Gmail labels, exactly as shown in the UI. Nested labels use "Parent/Child";
+# On Gmail: labels exactly as shown in the UI. Nested labels use "Parent/Child";
 # system labels are upper case (INBOX, SENT, UNREAD, STARRED).
+# On IMAP: the mailbox the message came from, verbatim as the server names it,
+# including its hierarchy separator ("Lists/golang", "Lists.golang").
 - label: INBOX
 
 # Message Date older than 90 days / newer than a day.
@@ -635,6 +869,8 @@ Details worth knowing:
 - `has_attachment` counts parts marked `Content-Disposition: attachment`.
   Inline images referenced by `cid:` are not attachments.
 - `label` is case-sensitive and exact — `label: inbox` does not match `INBOX`.
+  On an IMAP account the values are the mailbox names you listed under
+  `imap.mailboxes`, so a message can carry only the one it was fetched from.
 - `older_than` / `newer_than` compare against the message `Date` header, falling
   back to the provider's internal date when the header is missing or
   unparseable. A message with no usable date matches neither.
@@ -645,12 +881,16 @@ Details worth knowing:
 - Use `true` / `false` for `has_attachment`. YAML 1.2 treats `yes` and `no` as
   strings, and mail-muncher rejects them.
 
-### Spam and Trash
+### Spam and Trash (Gmail)
 
 **Spam and Trash are not fetched by default.** Nothing in those folders reaches
 your rules, and nothing lands on disk. Spam is the likeliest source of hostile,
 attacker-authored text in a pipeline that ends in a model's context window, so
 the default is to leave it where Gmail put it.
+
+This whole section is about the Gmail provider. IMAP has no equivalent key
+because it needs none: an IMAP account fetches exactly the folders named in
+`imap.mailboxes`, so junk arrives only if you ask for it by name.
 
 If you want it anyway — a legitimate message misfiled as spam, or an archive
 that is genuinely complete — set the key per account:
@@ -856,13 +1096,19 @@ because it arrived through mail-muncher.
 ```
 mail-muncher [command]
 
+  init        Write a starter config and print the next command to run
   run         Run one fetch/filter/store cycle
   daemon      Run fetch/filter/store cycles repeatedly on an interval
   mcp         Serve the stored mail archive to agents over MCP (stdio)
-  auth        Authenticate interactively against a mail provider
+  auth        Authenticate interactively against a mail provider (Gmail only)
   validate    Parse the config, resolve referenced files, and report problems
   completion  Generate the autocompletion script for the specified shell
 ```
+
+Any command that needs a config and cannot find one prints the setup guidance
+shown in [step 0 of the quickstart](#quickstart) — the path it looked at, the
+next command, and what each provider costs — instead of an `open: no such file`
+error.
 
 Persistent flags, available on every subcommand:
 
@@ -876,14 +1122,21 @@ Per-command flags:
 
 | Command | Flag | Default | Description |
 | --- | --- | --- | --- |
+| `init` | `--provider` | — | `imap` or `gmail`. Prompted for when omitted; **required with `--yes`**, because the two paths cost different things and there is no honest default. |
+| `init` | `--account` | `personal` | Name for the account the config creates. |
+| `init` | `--dest` | `~/Mail/mail-muncher` | Where the starter rule writes matched mail. |
+| `init` | `--yes` | `false` | Never prompt; take the default for every answer except `--provider`. |
+| `init` | `--force` | `false` | Overwrite an existing config. Without it, `init` refuses and exits 1 rather than clobbering somebody's rules and credential paths. |
 | `run` | `--dry-run` | `false` | Fetch and evaluate, report what would be written, write nothing and save no state. |
 | `run` | `--json` | `false` | Write a machine-readable manifest to stdout, one JSON object per account. |
 | `daemon` | `--interval` | `5m` | Time between cycles, minimum 30s. Each sleep is jittered by up to ±10%. |
 | `daemon` | `--dry-run` | `false` | As `run --dry-run`, on every tick. |
 | `daemon` | `--json` | `false` | Write a manifest to stdout after every cycle: newline-delimited JSON, one object per account per tick. |
-| `auth` | `--account` | — | Which account to authenticate. Required when the config has more than one. |
+| `auth` | `--account` | — | Which account to authenticate. Required when the config has more than one. Gmail accounts only — on an IMAP account `auth` refuses, because there is nothing to authorize. |
 
-`mcp` takes no flags of its own; it is configured entirely by `--config`.
+`mcp` takes no flags of its own; it is configured entirely by `--config`. Note
+that `init` writes to `--config` rather than reading from it, and creates the
+directory (0700) and the file (0600) as needed.
 
 `--log-level debug` logs the rule decision for every message — the message id,
 its subject, and the winning rule name or `no match` — which is the fastest way
@@ -902,8 +1155,8 @@ error: --interval 10s is below the 30s minimum
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. A cycle that hit per-message errors (a message that would not parse, one sink write that failed) still exits 0 — those are counted in the summary, not escalated. |
-| 1 | Config or validation error: the file would not parse, a rule would not compile, a required key is missing. Nothing was fetched. |
-| 2 | Provider or authentication failure: no cached token, a refresh Google rejected, the API unreachable after retries. |
+| 1 | Config or validation error: the file would not parse, a rule would not compile, a required key is missing, or there is no config file at all. Nothing was fetched. Also what `init` returns when a config already exists and `--force` was not given. |
+| 2 | Provider or authentication failure: a Gmail token that was never written or that Google rejected, an IMAP `password_cmd` that failed or a login the server refused, the server unreachable after retries. |
 | 3 | Another instance holds the cycle lock. Exit code 3 is how an overlapping cron invocation reports "the previous one is still going". |
 
 A quarantined message does **not** change the exit status: it is a message-level
@@ -976,7 +1229,8 @@ Full field-by-field contract: [docs/manifest.md](docs/manifest.md).
         └── 18f2a1b2c3.json      # why it is here
 ```
 
-Each account's state file is JSON:
+Each account's state file is JSON. The cursor inside it is the provider's, so
+its shape differs. Gmail:
 
 ```json
 {
@@ -996,6 +1250,29 @@ Each account's state file is JSON:
   harmless: everything already on disk is skipped at the write.
 - `seen_ids` is a FIFO set of the last 2000 delivered message ids — belt and
   braces alongside the sinks' idempotent filenames.
+
+IMAP tracks each mailbox independently, as a UIDVALIDITY/UID pair under `extra`:
+
+```json
+{
+  "last_sync_time": "2026-07-28T09:15:00Z",
+  "extra": {
+    "imap.INBOX.uidvalidity": "1650000000",
+    "imap.INBOX.last_uid": "48213"
+  },
+  "seen_ids": ["personal:INBOX:1650000000:48213"]
+}
+```
+
+A cycle whose stored UIDVALIDITY still matches the server's asks for
+`UID FETCH 48214:*` — only what arrived since. A cycle that finds it changed
+throws the stored UID away and resyncs from `initial_lookback`, because
+UIDVALIDITY changing is the protocol announcing that every UID mail-muncher
+remembers now names a different message. That resync re-archives the window it
+covers under fresh filenames, since a message's identity on this path is
+`<account>:<mailbox>:<uidvalidity>:<uid>`. The trade is deliberate: duplicated
+mail can be deleted, silently skipped mail cannot be recovered. Full detail:
+[docs/configuration.md](docs/configuration.md#how-imap-sync-works).
 
 The state directory is created 0700 and state files 0600: knowing which
 accounts exist and which message ids were seen is not public information.
@@ -1071,7 +1348,8 @@ A wide first run is an **intended mode**, not an abuse. The default
 want on day one — the whole history of what you are collecting, on disk, once —
 is the thing that does not happen by default.
 
-Set it wide for the first run:
+Set it wide for the first run. The key exists on both providers, under whichever
+block your account uses:
 
 ```yaml
 accounts:
@@ -1082,6 +1360,17 @@ accounts:
       initial_lookback: 13140h   # ~18 months — first run only
 ```
 
+```yaml
+accounts:
+  - name: personal
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      username: you@fastmail.com
+      password_cmd: pass show mail/fastmail
+      initial_lookback: 13140h   # ~18 months — first run only, per mailbox
+```
+
 Then run it once, and **drop the value back afterwards**:
 
 ```yaml
@@ -1089,15 +1378,16 @@ Then run it once, and **drop the value back afterwards**:
 ```
 
 Dropping it back is safe because `initial_lookback` only ever bounds the
-*first-ever* scan of an account. Every later cycle resumes from the stored
-cursor and ignores the key entirely. It is re-armed only by deleting the
-account's state file.
+*first-ever* scan — of an account on Gmail, of each mailbox on IMAP. Every later
+cycle resumes from the stored cursor and ignores the key entirely. It is
+re-armed only by deleting the account's state file, or, on IMAP, by the server
+changing UIDVALIDITY.
 
 What to expect:
 
 - It is **one large full scan**, rate-limited and retried, and it may take a
-  while. Downloads run four at a time and pages are 500 messages; neither is
-  configurable.
+  while. On Gmail, downloads run four at a time and pages are 500 messages;
+  neither is configurable. On IMAP it becomes a `SINCE` UID search per mailbox.
 - **Look before you commit.** `mail-muncher run --dry-run` fetches and evaluates
   exactly as a real run does and reports every path it *would* write, without
   touching the destination tree. Add `--json` to count them:
@@ -1126,7 +1416,11 @@ enough to write against, but treat it as subject to change until 1.0.
 
 | Area | Status |
 | --- | --- |
+| IMAP provider (`password_cmd`, per-mailbox UID cursors, `EXAMINE` + `BODY.PEEK[]`) | Built |
 | Gmail provider (OAuth, full scan, incremental history sync, RAW download) | Built |
+| `init` — writes a validated config for either provider, interactive or scripted | Built |
+| Setup guidance on every unconfigured or half-configured command | Built |
+| `mcp` serving protocol-correctly when unconfigured | Built |
 | Config loading and validation | Built |
 | Filter engine (all combinators and predicates listed above) | Built |
 | `.eml` and markdown sinks | Built |
@@ -1134,12 +1428,12 @@ enough to write against, but treat it as subject to change until 1.0.
 | `--json` run manifests | Built |
 | `mcp` — stdio MCP server, five tools | Built |
 | Quarantine and the two failure policies | Built |
-| IMAP provider | **Planned, not built.** No `provider: imap` block exists; the config rejects any provider other than `gmail`. |
 
 ### Deliberately out of scope
 
-- **Writing to your mailbox.** The read-only scope is a design constraint, not
-  a phase. No labeling, no deletion, no sending, no drafts.
+- **Writing to your mailbox.** Read-only is a design constraint, not a phase.
+  No labeling, no deletion, no sending, no drafts, and on IMAP not even marking
+  a message read.
 - **Being a mail client.** No UI, and no index. `search_messages` is a
   case-insensitive substring scan over the stored files, not a search engine:
   no stemming, no ranking, no query language. Threads are grouped by an id
@@ -1147,30 +1441,56 @@ enough to write against, but treat it as subject to change until 1.0.
 - **A network API.** Nothing listens on a socket. `mcp` speaks a stdio protocol
   to a client that launched it as a subprocess — no port, no HTTP endpoint, no
   network surface. The only thing that ever binds is the loopback port `auth`
-  opens for a few seconds during the OAuth redirect.
-- **Non-Gmail providers, today.** The provider seam exists and IMAP is the
-  planned second implementation, but it is not written.
+  opens for a few seconds during the OAuth redirect on the Gmail path.
+- **Bundling an OAuth client.** `gmail.readonly` is a Google restricted scope,
+  so the Gmail path will always mean registering your own — which is exactly why
+  IMAP exists as the low-friction way in.
 
 ### Known limitations
 
 - Inline `cid:` images are left as unresolved links in markdown output.
 - Subject slugs are ASCII-only; non-Latin subjects file as `no-subject`.
+- No predicate sees the message body; matching is on headers, labels and dates.
+
+Gmail:
+
+- The Gmail token expires every 7 days on a Testing-mode consent screen, so
+  `mail-muncher auth` is a weekly chore. This is Google's policy, not a setting.
 - `gmail.query` applies only to the first-ever scan of an account — not to
   incremental cycles, and not to a recovery scan after the cursor expires.
 - Spam and Trash are not fetched at all unless
   `gmail.include_spam_trash: true`. Once fetched, a rule on the `SPAM` and
   `TRASH` labels decides what happens to them.
 - Gmail's download concurrency (4) and page size (500) are not configurable.
-- No predicate sees the message body; matching is on headers, labels and dates.
+
+IMAP:
+
+- An app password is a full mail credential. Read-only is enforced by
+  mail-muncher's code, not by your provider — see
+  [the comparison](#two-ways-to-connect-a-mailbox).
+- A server changing UIDVALIDITY re-archives the `initial_lookback` window under
+  fresh filenames. Deliberate: duplicated mail is recoverable, skipped mail is
+  not.
+- IMAP has no server-side conversation id, so `thread_id` is always synthesized
+  from the `References`/`In-Reply-To` chain and `thread_id_source` is never
+  `provider`.
+- A mailbox the server does not have is an error, not an empty folder — so a
+  typo in `mailboxes:` fails the first run rather than looking like quiet mail.
+- Only the folders listed in `mailboxes:` are fetched; there is no "everything"
+  option and no server-side search.
 
 ## Documentation
 
 Browsable at <https://craigjmidwinter.github.io/mail-muncher/>, or in this repo:
 
-- [docs/gmail-setup.md](docs/gmail-setup.md) — Google Cloud walkthrough and
-  OAuth troubleshooting.
-- [docs/configuration.md](docs/configuration.md) — every config key, its
-  validation rule, and its failure mode.
+- [docs/configuration.md](docs/configuration.md) — every config key for both
+  providers, its validation rule, and its failure mode. The
+  [`accounts[].imap`](docs/configuration.md#accountsimap) section is the IMAP
+  reference; there is no separate setup page because there is no setup beyond
+  an app password.
+- [docs/gmail-setup.md](docs/gmail-setup.md) — the Gmail path only: Google Cloud
+  walkthrough, the seven-day expiry, and every OAuth error message with its fix.
+  Nothing in it applies to an IMAP account.
 - [docs/filters.md](docs/filters.md) — the complete match-tree language plus a
   cookbook of real rules.
 - [docs/output-format.md](docs/output-format.md) — the on-disk contract:
@@ -1184,6 +1504,13 @@ Browsable at <https://craigjmidwinter.github.io/mail-muncher/>, or in this repo:
   where your change belongs.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — build, test, and the conventions the
   codebase holds itself to.
+
+Runnable configs: [`examples/imap.yml`](examples/imap.yml) (the IMAP path,
+heavily commented), [`examples/minimal.yml`](examples/minimal.yml) (the smallest
+useful Gmail config), [`examples/job-search.yml`](examples/job-search.yml) (an
+externally-managed filter file in anger), and
+[`examples/read_delivered.py`](examples/read_delivered.py) (a correct consumer).
+All three configs pass `mail-muncher validate --config <file>`.
 
 ## License
 
