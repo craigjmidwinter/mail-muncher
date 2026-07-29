@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -86,6 +88,78 @@ func TestInitStarterRuleIsTheSmokeTest(t *testing.T) {
 			require.Contains(t, body, "dest: ~/Mail/mail-muncher")
 			require.Contains(t, body, "provider: "+provider)
 		})
+	}
+}
+
+// TestDefaultPasswordCmdIsPlatformAware pins the selection directly, for every
+// GOOS this can run on — the whole point being that the branches this machine
+// cannot execute are still checked.
+//
+// The old generated default was the macOS `security` command unconditionally,
+// so on Linux the first `mail-muncher run` failed with a command-not-found that
+// said nothing about mail.
+func TestDefaultPasswordCmdIsPlatformAware(t *testing.T) {
+	cases := map[string]string{
+		"darwin":  keychainPasswordCmd,
+		"linux":   secretToolPasswordCmd,
+		"freebsd": secretToolPasswordCmd,
+		"openbsd": secretToolPasswordCmd,
+		"windows": passPasswordCmd,
+		"plan9":   passPasswordCmd,
+		"":        passPasswordCmd,
+	}
+	for goos, want := range cases {
+		require.Equalf(t, want, defaultPasswordCmd(goos), "defaultPasswordCmd(%q)", goos)
+	}
+
+	// Whatever the platform, the command names a real secret manager and never
+	// the macOS binary anywhere but macOS.
+	for goos := range cases {
+		got := defaultPasswordCmd(goos)
+		require.NotEmpty(t, got)
+		if goos != "darwin" {
+			require.NotContains(t, got, "security find-generic-password",
+				"%s must not be handed the macOS keychain command", goos)
+		}
+	}
+}
+
+// TestInitPasswordCmdDefaultAndAlternatives: the generated imap config carries
+// the command for the platform that wrote it, and documents the others so the
+// file is self-explanatory when it is copied to a different machine.
+func TestInitPasswordCmdDefaultAndAlternatives(t *testing.T) {
+	opts := &initOptions{
+		configPath: filepath.Join(t.TempDir(), "config.yml"),
+		provider:   "imap",
+		account:    defaultInitAccount,
+		dest:       defaultInitDest,
+	}
+	body, err := renderConfig(opts)
+	require.NoError(t, err)
+
+	require.Contains(t, body, "password_cmd: "+defaultPasswordCmd(runtime.GOOS),
+		"the seeded command must be the one for this platform")
+
+	// Every alternative stays listed, so the file documents the choice either
+	// way round.
+	for _, alt := range []string{keychainPasswordCmd, secretToolPasswordCmd, passPasswordCmd} {
+		require.Contains(t, body, alt)
+	}
+	require.Contains(t, body, "macOS")
+	require.Contains(t, body, "Linux")
+
+	// And the "check it prints the password and nothing else" step echoes the
+	// same command, rather than one that does not exist here.
+	require.Contains(t, nextSteps(opts), defaultPasswordCmd(runtime.GOOS)+" | cat -A")
+
+	// The config every platform's branch would write must validate, not only
+	// this one's — which is the part a darwin machine cannot otherwise prove.
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		body := fmt.Sprintf(imapConfigTemplate,
+			opts.account, opts.dest, starterRuleAge, docsURL, defaultPasswordCmd(goos))
+		require.Contains(t, body, "password_cmd: "+defaultPasswordCmd(goos))
+		require.NoErrorf(t, validateGenerated(body, "imap"),
+			"the config init writes on %s must pass validate:\n%s", goos, body)
 	}
 }
 

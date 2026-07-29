@@ -181,7 +181,7 @@ error: accounts[1].name: duplicate account name "personal" (already defined at a
 ### `accounts[].provider`
 
 - **Type:** string
-- **Default:** `gmail`
+- **Required.** There is no default.
 - **Valid values:** `gmail`, `imap`
 
 Lowercased and trimmed on load, so `Gmail` and ` gmail ` both work. Anything
@@ -190,6 +190,19 @@ else is an error:
 ```
 error: accounts[0].provider: unknown provider "pigeon" (known providers: gmail, imap)
 ```
+
+Omitting it is an error too, and the message says what each option costs:
+
+```
+error: accounts[0].provider: required: want "imap" (app password, ~2 min) or "gmail" (Google Cloud Console, ~10 min, plus a token to re-issue every 7 days)
+```
+
+The key has no default on purpose. It used to default to `gmail`, which meant a
+hand-written config that said nothing was enrolled in ten minutes of Google
+Cloud Console — and, on a consent screen still in Testing mode, a refresh token
+Google expires every 7 days — without its author ever having chosen that. The
+two paths cost different enough things that guessing on your behalf is worse
+than asking, so write the key out in every account.
 
 The two differ in what they cost you to set up, not in what they can archive.
 Both hand the pipeline complete RFC822 bytes, so rules, formats, filenames and
@@ -725,7 +738,7 @@ alone exit 0 — which is deliberate, and worth internalizing:
 | Problem | Severity | Why |
 | --- | --- | --- |
 | Malformed YAML, unknown key, multiple documents | error (load fails) | The config cannot be understood. |
-| Missing/duplicate name, unknown account, unknown provider, empty `dest`, missing `match`, bad format, uncompilable match tree, bad `initial_lookback` | error | The config cannot be used as written. |
+| Missing/duplicate name, missing or unknown `provider`, unknown account, empty `dest`, missing `match`, bad format, uncompilable match tree, bad `initial_lookback` | error | The config cannot be used as written. |
 | `credentials_file` missing on disk | warning | Written before the OAuth client is downloaded. |
 | `token_file` missing on disk | warning | Created by `auth`, which runs after the config exists. |
 | `from_domains_file` missing on disk | warning | **Owned by another program**, which may not have created it yet. The predicate matches nothing until it appears. |

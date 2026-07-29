@@ -185,6 +185,15 @@ func validateAccounts(cfg *Config, add addFunc) map[string]bool {
 		// account that fetches over IMAP would leave the user believing a
 		// filter is in force that is not.
 		switch a.Provider {
+		case "":
+			// Required, with no default. The two paths cost different things,
+			// so guessing on the user's behalf would sign them up for the
+			// expensive one without their ever having chosen it — say what both
+			// cost instead.
+			add(SeverityError, field+".provider",
+				"required: want %q (app password, ~2 min) or %q (Google Cloud Console, ~10 min, plus a token to re-issue every 7 days)",
+				ProviderIMAP, ProviderGmail)
+			continue
 		case ProviderGmail:
 			if a.IMAP != nil {
 				add(SeverityError, field+".imap", "must not be set on a %q account (remove it, or set provider: %s)", ProviderGmail, ProviderIMAP)

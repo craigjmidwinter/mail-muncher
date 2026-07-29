@@ -48,6 +48,7 @@ accounts:
       initial_lookback: 168h
       include_spam_trash: true
   - name: work
+    provider: Gmail
     gmail:
       credentials_file: /etc/mm/work-credentials.json
       token_file: /etc/mm/work-token.json
@@ -88,7 +89,7 @@ rules:
 	// Omitted keys get their documented defaults.
 	work := cfg.Account("work")
 	require.NotNil(t, work)
-	require.Equal(t, ProviderGmail, work.Provider, "provider defaults to gmail")
+	require.Equal(t, ProviderGmail, work.Provider, "provider is lowercased on load")
 	require.Equal(t, DefaultInitialLookback, work.Gmail.InitialLookback)
 	require.Equal(t, 720*time.Hour, work.Gmail.InitialLookbackDuration())
 	require.False(t, work.Gmail.IncludesSpamTrash(), "include_spam_trash defaults to false")
@@ -130,22 +131,26 @@ func TestLoadRejectsUnknownKeys(t *testing.T) {
 totally_bogus: yes
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 `,
 		"account": `
 accounts:
   - name: personal
+    provider: gmail
     nickname: pers
     gmail: {credentials_file: /a, token_file: /b}
 `,
 		"gmail": `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b, oops: 1}
 `,
 		"rule": `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 rules:
   - name: r
@@ -170,6 +175,7 @@ func TestLoadUnknownKeysInsideMatchAreNotRejectedHere(t *testing.T) {
 	cfg, err := Load(write(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 rules:
   - name: r
@@ -238,6 +244,7 @@ func TestLoadExpandsTildeAndEnvInEveryPathField(t *testing.T) {
 state_dir: ~/state
 accounts:
   - name: personal
+    provider: gmail
     gmail:
       credentials_file: ~/.config/mail-muncher/credentials.json
       token_file: $HOME/token.json
@@ -297,6 +304,7 @@ func TestValidateDuplicateRuleName(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 rules:
   - name: dupe
@@ -317,8 +325,10 @@ func TestValidateDuplicateAccountName(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /c, token_file: /d}
 rules:
   - name: r
@@ -335,6 +345,7 @@ func TestValidateBadFormat(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 rules:
   - name: r
@@ -360,6 +371,7 @@ func TestValidateUnknownAccountReference(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 rules:
   - name: r
@@ -377,6 +389,7 @@ func TestValidateRequiredFields(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: ""
+    provider: gmail
     gmail: {credentials_file: "", token_file: ""}
   - name: bad-provider
     provider: pigeon
@@ -406,6 +419,43 @@ rules:
 	}
 }
 
+// TestValidateProviderIsRequired: an omitted `provider` is an error, never a
+// silent default.
+//
+// It used to default to gmail, which meant a hand-written config that said
+// nothing was enrolled in the ten-minute Google Cloud Console path — and in a
+// refresh token Google expires every 7 days on a Testing-mode consent screen —
+// without the author ever having chosen it. The message has to name both
+// options and what each costs, because the whole point is that the choice is
+// not free either way.
+func TestValidateProviderIsRequired(t *testing.T) {
+	cfg := loadForValidation(t, `
+accounts:
+  - name: personal
+    gmail: {credentials_file: /a, token_file: /b}
+rules:
+  - name: r
+    match: {has_attachment: true}
+    dest: /one
+`)
+
+	require.Empty(t, cfg.Accounts[0].Provider, "Load must not fill the key in")
+
+	ps := Validate(cfg)
+	require.True(t, hasProblem(ps, SeverityError, "accounts[0].provider"))
+
+	err := ps.Err()
+	require.ErrorContains(t, err, "accounts[0].provider: required")
+	require.ErrorContains(t, err, ProviderIMAP)
+	require.ErrorContains(t, err, ProviderGmail)
+	require.ErrorContains(t, err, "app password")
+	require.ErrorContains(t, err, "Google Cloud Console")
+
+	// And it is the only complaint about that account: the gmail block is not
+	// then validated against a provider the user never asked for.
+	require.Len(t, ps.Errors(), 1, "got %v", ps)
+}
+
 func TestValidateNoAccountsIsAnError(t *testing.T) {
 	cfg := loadForValidation(t, "rules: []\n")
 	ps := Validate(cfg)
@@ -418,8 +468,10 @@ func TestValidateInitialLookback(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: bad
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b, initial_lookback: "thirty days"}
   - name: negative
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b, initial_lookback: "-1h"}
 rules:
   - name: r
@@ -441,8 +493,10 @@ func TestValidateIncludeSpamTrashWarnsOnOptIn(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: quiet
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
   - name: loud
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b, include_spam_trash: true}
 rules:
   - name: r
@@ -471,6 +525,7 @@ func TestValidateMissingDomainsFileIsAWarningNotAnError(t *testing.T) {
 	cfg := loadForValidation(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail:
       credentials_file: `+creds+`
       token_file: `+token+`

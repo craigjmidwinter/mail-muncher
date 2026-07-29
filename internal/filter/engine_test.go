@@ -167,6 +167,7 @@ func TestEngineFromLoadedConfig(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /c, token_file: /t}
 rules:
   - name: job-search

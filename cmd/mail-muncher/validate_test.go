@@ -21,6 +21,7 @@ func TestValidateOKWithWarningsExitsZero(t *testing.T) {
 	path := writeConfig(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail:
       credentials_file: /nonexistent/credentials.json
       token_file: /nonexistent/token.json
@@ -43,6 +44,7 @@ func TestValidateReportsErrorsAndFails(t *testing.T) {
 	path := writeConfig(t, `
 accounts:
   - name: personal
+    provider: gmail
     gmail: {credentials_file: /a, token_file: /b}
 rules:
   - name: dupe
@@ -64,6 +66,60 @@ rules:
 	require.Contains(t, out, `error: rules[1].account: unknown account "nope"`)
 	require.Contains(t, out, "error: rules[1].dest: must not be empty")
 	require.Contains(t, out, "FAILED: 4 errors")
+}
+
+// TestValidateRequiresProvider: an account with no `provider:` fails, and the
+// message names both options and what each costs rather than only saying the
+// key is required.
+//
+// The key used to default to gmail, so a hand-written config that said nothing
+// silently took the Google Cloud Console path — and its weekly token expiry —
+// without the author ever choosing it.
+func TestValidateRequiresProvider(t *testing.T) {
+	path := writeConfig(t, `
+accounts:
+  - name: personal
+    gmail: {credentials_file: /a, token_file: /b}
+rules:
+  - name: r
+    match: {has_attachment: true}
+    dest: /one
+`)
+
+	out, err := execute(t, "validate", "--config", path)
+	require.Error(t, err)
+	require.Contains(t, out, `error: accounts[0].provider: required: want "imap" (app password, ~2 min) `+
+		`or "gmail" (Google Cloud Console, ~10 min, plus a token to re-issue every 7 days)`)
+	require.Contains(t, out, "FAILED: 1 error")
+}
+
+// TestValidateDoesNotRunPasswordCmd: checking whether a config parses must
+// never execute the command that fetches the mail password.
+//
+// It is the difference between a check anyone can run on any machine — in CI,
+// on a box where the keyring is locked, on a platform where the configured
+// secret manager is not installed — and one that only works where the secret
+// already lives. `mail-muncher run` is where the command is executed.
+func TestValidateDoesNotRunPasswordCmd(t *testing.T) {
+	dir := t.TempDir()
+	sentinel := filepath.Join(dir, "password_cmd-was-run")
+	path := writeConfig(t, `
+accounts:
+  - name: personal
+    provider: imap
+    imap:
+      host: imap.example.com
+      username: you@example.com
+      password_cmd: touch `+sentinel+`
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: `+filepath.Join(dir, "mail")+`
+`)
+
+	out, err := execute(t, "validate", "--config", path)
+	require.NoError(t, err, out)
+	require.NoFileExists(t, sentinel, "validate must not execute password_cmd")
 }
 
 func TestValidateReportsUnknownKey(t *testing.T) {

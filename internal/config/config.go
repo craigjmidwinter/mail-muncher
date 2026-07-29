@@ -25,8 +25,8 @@ const (
 	// (30 days).
 	DefaultInitialLookback = "720h"
 
-	// ProviderGmail selects the Gmail API backend. It is also the default when
-	// `provider` is omitted.
+	// ProviderGmail selects the Gmail API backend. There is deliberately no
+	// default: see Account.Provider.
 	ProviderGmail = "gmail"
 
 	// ProviderIMAP selects the generic IMAP backend: any host that speaks
@@ -179,7 +179,13 @@ type Account struct {
 	// Name is the unique identifier rules refer to via `Rule.Account`.
 	Name string `yaml:"name"`
 	// Provider selects the fetch backend: ProviderGmail or ProviderIMAP.
-	// Gmail is the default when the key is omitted.
+	//
+	// It is required, and has no default. The two backends cost very different
+	// things to set up — an app password versus a Google Cloud project, a
+	// standing credential versus one Google expires every 7 days on a
+	// Testing-mode consent screen — so defaulting the key would enrol someone in
+	// the expensive path without their ever having chosen it. Validate reports
+	// an omitted `provider` as an error naming both options and what each costs.
 	Provider string `yaml:"provider"`
 	// Gmail carries the Gmail settings; required — and only permitted — when
 	// Provider is ProviderGmail.
@@ -476,9 +482,9 @@ func (c *Config) applyDefaults() {
 
 	for i := range c.Accounts {
 		a := &c.Accounts[i]
-		if strings.TrimSpace(a.Provider) == "" {
-			a.Provider = ProviderGmail
-		}
+		// Normalized but never filled in: an omitted `provider` stays empty so
+		// Validate can require it. Defaulting it here would silently sign the
+		// user up for the Google Cloud Console path.
 		a.Provider = strings.ToLower(strings.TrimSpace(a.Provider))
 		if a.Gmail != nil && strings.TrimSpace(a.Gmail.InitialLookback) == "" {
 			a.Gmail.InitialLookback = DefaultInitialLookback

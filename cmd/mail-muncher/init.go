@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -34,6 +35,47 @@ const (
 // initProviders are the providers `init` can write a config for, in the order
 // a newcomer should consider them.
 var initProviders = []string{"imap", "gmail"}
+
+// Secret-manager commands `init` can seed `imap.password_cmd` with. Each one
+// prints the secret on stdout and nothing else, which is the contract
+// password_cmd has to satisfy.
+const (
+	// keychainPasswordCmd reads from the macOS login keychain, which is present
+	// on every Mac with no install step.
+	keychainPasswordCmd = "security find-generic-password -s mail-muncher -w"
+	// secretToolPasswordCmd reads from a libsecret keyring (GNOME Keyring,
+	// KWallet via the libsecret backend) — the closest thing Linux has to a
+	// keychain that is already there.
+	secretToolPasswordCmd = "secret-tool lookup service mail-muncher"
+	// passPasswordCmd is the portable fallback named in the generated comment:
+	// `pass` runs anywhere, including where no keyring daemon does.
+	passPasswordCmd = "pass show mail/mail-muncher"
+)
+
+// defaultPasswordCmd is the `imap.password_cmd` init seeds the generated config
+// with, for the platform it is running on.
+//
+// It is a pure function of goos rather than a probe of the filesystem: the
+// generated line is a starting point the user edits anyway, and guessing wrong
+// from a `which` is no better than guessing wrong from GOOS. What matters is
+// that the default is not a command that does not exist on the platform — on
+// Linux the macOS `security` binary fails with a shell-shaped error that says
+// nothing about mail, which is a miserable first experience.
+//
+// Every branch is listed in the generated comment regardless, so the file
+// documents the alternatives whichever platform wrote it.
+func defaultPasswordCmd(goos string) string {
+	switch goos {
+	case "darwin":
+		return keychainPasswordCmd
+	case "linux", "freebsd", "openbsd", "netbsd", "dragonfly":
+		return secretToolPasswordCmd
+	default:
+		// Windows, plan9, and anything else: `pass` is the one option here that
+		// does not assume a platform-specific secret service.
+		return passPasswordCmd
+	}
+}
 
 // newInitCommand builds the `init` subcommand: write a valid config and say
 // what to run next.
@@ -300,6 +342,7 @@ func renderConfig(opts *initOptions) (string, error) {
 			opts.dest,
 			starterRuleAge,
 			docsURL,
+			defaultPasswordCmd(runtime.GOOS),
 		), nil
 	}
 	return "", fmt.Errorf("unknown provider %q", opts.provider)
@@ -425,13 +468,13 @@ Docs: %s`,
      password_cmd can read it.
   2. Run that same password_cmd in a shell and check it prints the password
      and nothing else, for example:
-       security find-generic-password -s mail-muncher -w | cat -A
+       %s | cat -A
      Anything else on stdout - a prompt, a warning, a trailing blank line -
      becomes part of the password and the login fails.
   3. mail-muncher validate
   4. mail-muncher run --dry-run     then     mail-muncher run
 Matched mail lands in %s
-Docs: %s`, opts.configPath, opts.dest, docsURL)
+Docs: %s`, opts.configPath, defaultPasswordCmd(runtime.GOOS), opts.dest, docsURL)
 }
 
 // sortedProviders is used by tests to iterate every branch this command can
@@ -500,15 +543,20 @@ accounts:
       tls: true
       username: you@example.com
       # Never a plaintext password. This command is run to fetch the app
-      # password and must print it and nothing else:
-      #   macOS   security find-generic-password -s mail-muncher -w
-      #   Linux   secret-tool lookup service mail-muncher
+      # password and must print it and nothing else. The line below is the one
+      # for the platform that wrote this file; swap in whichever you use:
+      #   macOS   ` + keychainPasswordCmd + `
+      #   Linux   ` + secretToolPasswordCmd + `
+      #   pass    ` + passPasswordCmd + `
+      #   1Password / Bitwarden / anything else: any command that prints the
+      #           secret on stdout works, including a pipeline such as
+      #           ` + passPasswordCmd + ` | head -n 1
       #
       # An app password is a full mail credential -- broader than a read-only
       # OAuth token. mail-muncher only ever issues BODY.PEEK and never sets the
       # \Seen flag, but that restraint is in this program rather than enforced
       # by your provider.
-      password_cmd: security find-generic-password -s mail-muncher -w
+      password_cmd: %[5]s
       mailboxes: [INBOX]
 
 rules:
