@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/lockup-dark.svg">
+    <img src="docs/assets/brand/lockup.svg" alt="mail-muncher" width="408" height="64">
+  </picture>
+</p>
+
 # mail-muncher
 
 [![CI](https://github.com/craigjmidwinter/mail-muncher/actions/workflows/ci.yml/badge.svg)](https://github.com/craigjmidwinter/mail-muncher/actions/workflows/ci.yml)
@@ -1511,6 +1518,12 @@ useful Gmail config), [`examples/job-search.yml`](examples/job-search.yml) (an
 externally-managed filter file in anger), and
 [`examples/read_delivered.py`](examples/read_delivered.py) (a correct consumer).
 All three configs pass `mail-muncher validate --config <file>`.
+
+## Acknowledgements
+
+The wordmark is set in [Silkscreen](https://github.com/googlefonts/silkscreen)
+by Jason Kottke, used under the SIL Open Font License 1.1. Brand assets, the
+palette and usage rules are in [branding/BRAND.md](branding/BRAND.md).
 
 ## License
 
