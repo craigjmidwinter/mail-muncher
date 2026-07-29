@@ -1,3 +1,13 @@
+# Crawlers only read robots.txt from the domain root. mail-muncher is a GitHub
+# project page, so this file is served at /mail-muncher/robots.txt and is
+# advisory only — the effective robots.txt is https://craigjmidwinter.github.io/
+# robots.txt, which belongs to a different repository. It is kept here so the
+# rules are already correct if this site ever moves to a custom domain, where
+# this file would become the live one.
+#
+# The sitemap is also advertised with <link rel="sitemap"> on every page, which
+# does not depend on the path this file lands at. See _includes/head_custom.html.
+
 User-agent: *
 Allow: /
 

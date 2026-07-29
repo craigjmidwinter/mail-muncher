@@ -1,0 +1,10 @@
+<!--
+  Overrides the empty head_custom.html that just-the-docs ships, which its
+  _includes/head.html includes on every page.
+
+  robots.txt is only honoured at the domain root. This is a project page, so
+  ours is served at /mail-muncher/robots.txt and crawlers never read it — the
+  Sitemap: line in it cannot be discovered that way. Advertising the sitemap
+  here gives it a second, path-independent route.
+-->
+<link rel="sitemap" type="application/xml" title="Sitemap" href="{{ '/sitemap.xml' | relative_url }}">
