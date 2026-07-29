@@ -95,6 +95,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.logLevel, "log-level", "info", "log verbosity: debug, info, warn, error")
 
 	root.AddCommand(
+		newInitCommand(),
 		newRunCommand(),
 		newDaemonCommand(),
 		newAuthCommand(),

@@ -74,10 +74,21 @@ func TestValidateReportsUnknownKey(t *testing.T) {
 	require.Contains(t, err.Error(), "not found in type")
 }
 
+// TestValidateMissingConfigFile: "there is no config file" is a distinct state
+// from "the config file is broken", and `validate` answers it with setup
+// guidance rather than an open(2) failure. The full contract is asserted in
+// guidance_test.go; this only pins that `validate` is on that path.
 func TestValidateMissingConfigFile(t *testing.T) {
-	_, err := execute(t, "validate", "--config", filepath.Join(t.TempDir(), "nope.yml"))
+	missing := filepath.Join(t.TempDir(), "nope.yml")
+
+	_, err := execute(t, "validate", "--config", missing)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "open config")
+
+	var se *setupError
+	require.ErrorAs(t, err, &se)
+	require.Equal(t, kindNoConfig, se.Kind)
+	require.Contains(t, err.Error(), missing)
+	require.Contains(t, err.Error(), "mail-muncher init")
 }
 
 func TestValidateTestdataConfigEndToEnd(t *testing.T) {

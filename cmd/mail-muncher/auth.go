@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
 	"github.com/craigjmidwinter/mail-muncher/internal/provider/gmail"
 	"github.com/spf13/cobra"
 )
@@ -35,6 +37,12 @@ func newAuthCommand() *cobra.Command {
 
 			path, err := cmd.Flags().GetString("config")
 			if err != nil {
+				return err
+			}
+			// An unconfigured machine is the common case for `auth` — it is the
+			// command people reach for first — so it gets the same setup
+			// guidance every other command gives rather than an open(2) failure.
+			if err := requireConfigFile(path); err != nil {
 				return err
 			}
 			cfg, err := config.Load(path)
@@ -76,7 +84,11 @@ func newAuthCommand() *cobra.Command {
 // one configured when --account was omitted.
 func resolveAccount(cfg *config.Config, name string) (*config.Account, error) {
 	if len(cfg.Accounts) == 0 {
-		return nil, fmt.Errorf("%s: no accounts configured", cfg.Path)
+		return nil, setupFailure(pipeline.ExitConfig, &setupError{
+			Kind: kindNoAccounts,
+			Path: cfg.Path,
+			Text: noAccountsGuidance(cfg.Path, errors.New("the accounts: list is empty")),
+		})
 	}
 
 	if strings.TrimSpace(name) == "" {

@@ -126,7 +126,7 @@ type daemonOptions struct {
 // while the domain files it points at are hot-reloaded every cycle. That split
 // is the documented contract.
 func runDaemon(ctx context.Context, cmd *cobra.Command, configPath string, opts daemonOptions) error {
-	cfg, runner, err := loadRunner(configPath, opts.dryRun)
+	cfg, runner, err := loadRunnerFor(cmd, configPath, opts.dryRun)
 	if err != nil {
 		return err
 	}

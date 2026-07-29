@@ -54,10 +54,18 @@ func newRunCommand() *cobra.Command {
 // server reads rules and destinations from.
 //
 // Every failure is graded ExitConfig: nothing here has reached a provider yet.
+//
+// "No config file at the resolved path" is checked first and separately, so
+// first contact with an unconfigured machine produces setup guidance rather
+// than an open(2) failure from the YAML decoder.
 func loadRunner(configPath string, dryRun bool) (*config.Config, *pipeline.Runner, error) {
+	if err := requireConfigFile(configPath); err != nil {
+		return nil, nil, err
+	}
+
 	cfg, problems, err := config.LoadAndValidate(configPath)
 	if err != nil {
-		return nil, nil, &pipeline.ExitCodeError{Code: pipeline.ExitConfig, Err: err}
+		return nil, nil, configFailure(configPath, cfg, err)
 	}
 	// Warnings do not stop a run, but the user should hear about them. They go
 	// to slog (stderr), so `--json` keeps stdout parseable — and so the MCP
@@ -76,13 +84,29 @@ func loadRunner(configPath string, dryRun bool) (*config.Config, *pipeline.Runne
 	return cfg, runner, nil
 }
 
+// loadRunnerFor is loadRunner plus the guidance a command can only print once
+// it has a writer: the partially-configured states — no rules, an account that
+// has never been authorized — that are legal but almost certainly not what the
+// user meant.
+//
+// The advice goes to stderr, never stdout, so `run --json` stays parseable and
+// the MCP server's stdout carries protocol frames and nothing else.
+func loadRunnerFor(cmd *cobra.Command, configPath string, dryRun bool) (*config.Config, *pipeline.Runner, error) {
+	cfg, runner, err := loadRunner(configPath, dryRun)
+	if err != nil {
+		return nil, nil, err
+	}
+	reportSetupAdvice(cmd.ErrOrStderr(), cfg)
+	return cfg, runner, nil
+}
+
 // runCycle loads the config, runs exactly one cycle, and renders the result.
 //
 // It is kept separate from the cobra plumbing so the command layer owns only
 // the flags: every decision that `daemon` and the MCP server must make the same
 // way (grading errors, rendering manifests) lives in internal/pipeline.
 func runCycle(cmd *cobra.Command, configPath string, dryRun, jsonOut bool) error {
-	_, runner, err := loadRunner(configPath, dryRun)
+	cfg, runner, err := loadRunnerFor(cmd, configPath, dryRun)
 	if err != nil {
 		return err
 	}
@@ -93,7 +117,7 @@ func runCycle(cmd *cobra.Command, configPath string, dryRun, jsonOut bool) error
 	// created files, and the caller must not lose track of them.
 	writeManifests(cmd.OutOrStdout(), manifests, jsonOut)
 
-	return pipeline.Exit(cycleErr)
+	return cycleFailure(cfg, cycleErr)
 }
 
 // writeManifests renders one cycle's manifests to stdout: newline-delimited

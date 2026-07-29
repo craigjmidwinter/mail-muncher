@@ -54,6 +54,10 @@ func runCLI(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	root := newRootCommand()
 	root.SetOut(&out)
 	root.SetErr(&errBuf)
+	// Stdin is set explicitly, and to something that is not a pipe: `mcp`
+	// decides whether an MCP client launched it by looking at stdin, and a test
+	// run must never look like one.
+	root.SetIn(strings.NewReader(""))
 	root.SetArgs(args)
 
 	err = root.Execute()

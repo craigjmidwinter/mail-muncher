@@ -1,0 +1,15 @@
+mail-muncher is not configured.
+  missing config file: /home/someone/.config/mail-muncher/config.yml
+  next command:        mail-muncher init
+  then:                mail-muncher validate && mail-muncher run --dry-run
+
+init asks which provider to use. Both are supported; the costs differ.
+  provider: imap   ~2 min. Gmail, Fastmail, Proton Bridge, work accounts,
+    self-hosted. Needs an app password, which is a broader credential than a
+    read-only OAuth token; mail-muncher only ever issues BODY.PEEK.
+  provider: gmail  ~10 min in the Google Cloud Console: gmail.readonly is a
+    Google restricted scope, so mail-muncher ships no OAuth client and you
+    register your own. Google enforces read-only, but on a Testing-mode
+    consent screen the refresh token expires every 7 days, so
+    "mail-muncher auth" must be re-run weekly. Read docs/gmail-setup.md.
+Docs: https://craigjmidwinter.github.io/mail-muncher/

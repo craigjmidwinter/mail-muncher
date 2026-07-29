@@ -39,6 +39,11 @@ func newValidateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// "There is no config file" is a different state from "the config
+			// file is broken", and only one of them has a next command.
+			if err := requireConfigFile(path); err != nil {
+				return err
+			}
 
 			cfg, err := config.Load(path)
 			if err != nil {

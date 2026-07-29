@@ -64,9 +64,9 @@ func newMCPCommand() *cobra.Command {
 // what turns a broken config into a startup error the user can see rather than
 // a tool error buried in an agent transcript.
 func runMCP(ctx context.Context, cmd *cobra.Command, configPath string) error {
-	cfg, runner, err := loadRunner(configPath, false)
+	cfg, runner, err := loadRunnerFor(cmd, configPath, false)
 	if err != nil {
-		return err
+		return mcpStartupFailure(ctx, cmd, err)
 	}
 
 	srv, err := mcpserver.New(mcpserver.Options{
