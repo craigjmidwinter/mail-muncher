@@ -7,7 +7,7 @@ tags:
 summary: Second provider behind the same interface; unlocks non-Gmail accounts
 type: epic
 status: planned
-horizon: later
+horizon: now
 ---
 
 
