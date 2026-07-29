@@ -70,17 +70,21 @@ social-card wordmark, the logo mark on its dark field), where 3:1 is the bar.
 The relationship inverts: on dark, the Accent is the readable one and Accent
 deep is the emphasis. That is why `$link-color` differs between the two schemes.
 
-**Inside the mark** (all measured against the dark badge field `#17130F`)
+**Inside the mark**
 
 | Ratio | Pair | Note |
 | --- | --- | --- |
-| 15.61:1 | case cream `#F1EBE4` on field | the silhouette |
+| 17.46:1 | screen `#17130F` on light Paper `#FBF8F5` | the dark mass the face sits in |
+| 16.29:1 | Ink keyline `#1F1A17` on light Paper | what holds the light-surface silhouette |
 | 16.29:1 | teeth `#FBF8F5` on mouth interior `#1F1A17` | the face |
-| 4.82:1 | Accent `#E0533D` on field | chevron, blush, LED, seams |
-| 3.10:1 | keyline `#6B625C` on field | non-text boundary, 3:1 bar |
-| **1.12:1** | **case cream on light Paper `#FBF8F5`** | **why the badge exists** |
+| 15.61:1 | case cream `#F1EBE4` on dark Paper `#17130F` | the dark-surface silhouette |
+| 4.82:1 | Accent `#E0533D` on screen | chevron, blush, LED, seams |
+| 3.10:1 | Muted keyline `#6B625C` on dark Paper | non-text boundary, 3:1 bar |
+| **1.12:1** | **case cream on light Paper** | **why the keyline changes weight** |
 
-That last row is the whole reason for the two logo variants below.
+That last row is the whole reason for the two variants below: the cream case is
+invisible as a *fill* on light paper, so on light surfaces its *edge* has to do
+the work.
 
 ---
 
@@ -121,8 +125,8 @@ going to survive a 16px render anyway. That is what the second mark is for.
 
 | | File | Grid | Use at |
 | --- | --- | --- | --- |
-| **Full mark** | `mark.svg` / `mark-badge.svg` | 48 × 48 | **48px and up** |
-| **Small mark** | `mark-small.svg` / `mark-small-badge.svg` | 16 × 16 | **below 48px** |
+| **Full mark** | `mark.svg` / `mark-dark.svg` | 48 × 48 | **48px and up** |
+| **Small mark** | `mark-small.svg` / `mark-small-dark.svg` | 16 × 16 | **below 48px** |
 
 The full mark at 16px is mush — the teeth, the envelope and the chevron all
 collapse into noise and take the silhouette with them. This was rendered and
@@ -135,32 +139,35 @@ Both are the same character. Do not scale the full mark down past 48px, and do
 not scale the small mark up past 48px — at 64px and above its coarseness reads
 as a mistake rather than as a decision.
 
-### Two fields: free mark and badge
+### Two keyline weights, one drawing
 
-The case is cream. On the dark background it came from, that is the whole point.
-On our light Paper it is **1.12:1** — invisible.
+The case is cream. On the dark background the concept came from, that is the
+whole point. On our light Paper the cream *fill* is **1.12:1** — invisible.
 
-Three fixes were considered: outline the case in Ink and keep it cream; re-tint
-the case to Muted so it becomes a grey monitor; or put the character on a dark
-field. The badge won.
+Three fixes were considered: re-tint the case to Muted so it becomes a grey
+monitor; put the character on a dark badge field; or change only the keyline.
+The keyline won.
 
-- **Outlining** leaves a big cream mass on a cream page. The mark becomes a line
-  drawing with one dark blob (the screen) floating in it — a different object.
 - **Re-tinting to grey** changes the character's complexion, and worse, it makes
   the dark screen fight a mid-grey case on a light page, which flattens the face.
   The face is the identity; anything that flattens it is the wrong trade.
-- **The badge** keeps every colour relationship in the drawing exactly as
-  designed, guarantees contrast on any surface, and reads as a terminal window —
-  which reinforces what the tool is.
+- **A dark badge field** guarantees contrast, but it puts a black tile on the
+  page. It reads as a container the logo is trapped in rather than as the logo,
+  and it does not look like the thing it is a drawing of.
+- **The keyline** changes exactly one value. Everything else — the cream, the
+  shading, the screen, the face, the envelope — is identical between variants,
+  so both are unmistakably the same object. On light paper the edge is Ink and
+  the silhouette is crisp; the screen is already a 17.46:1 dark mass, so the
+  mark never floats.
 
-So:
-
-| Surface | Use | File |
+| Surface | Keyline | File |
 | --- | --- | --- |
-| Light (or unknown) | **badge** — character on a rounded `#17130F` field | `mark-badge.svg`, `mark-small-badge.svg` |
-| Dark, known | free mark — transparent background | `mark.svg`, `mark-small.svg` |
+| Light | Ink `#1F1A17` | `mark.svg`, `mark-small.svg`, `lockup.svg` |
+| Dark | Muted `#6B625C` | `mark-dark.svg`, `mark-small-dark.svg`, `lockup-dark.svg` |
 
-The badge is the safe default. When in doubt, use it.
+Both are transparent PNG/SVG — **there is no background plate**. Do not add one.
+The one exception is `apple-touch-icon.png`, which iOS renders opaque, so it
+ships on Paper.
 
 ---
 
@@ -215,24 +222,24 @@ generator, and the font's build-time source.
 
 | File | What |
 | --- | --- |
-| `docs/assets/brand/mark.svg` | full mark, 48 grid, transparent |
-| `docs/assets/brand/mark-badge.svg` | full mark on the dark field, 64 viewBox |
-| `docs/assets/brand/mark-small.svg` | small mark, 16 grid, transparent |
-| `docs/assets/brand/mark-small-badge.svg` | small mark on the dark field |
+| `docs/assets/brand/mark.svg` | full mark, 48 grid, Ink keyline, for light surfaces |
+| `docs/assets/brand/mark-dark.svg` | full mark, Muted keyline, for dark surfaces |
+| `docs/assets/brand/mark-small.svg` | small mark, 16 grid, Ink keyline |
+| `docs/assets/brand/mark-small-dark.svg` | small mark, Muted keyline |
 | `docs/assets/brand/lockup.svg` | small mark + wordmark, for light surfaces |
 | `docs/assets/brand/lockup-dark.svg` | same, cream wordmark, for dark surfaces |
 | `docs/assets/brand/lockup-408.png` | lockup at 4x (408 x 64), for anywhere SVG is awkward |
 | `docs/assets/brand/lockup-dark-408.png` | same, dark-surface variant |
-| `docs/assets/brand/mark-512.png` | 512px badge (64 × 8) |
-| `docs/assets/brand/mark-dark-480.png` | 480px free mark (48 × 10) |
-| `docs/assets/brand/apple-touch-icon.png` | 180px; a 128px badge padded to 180 |
+| `docs/assets/brand/mark-480.png` | 480px light mark (48 × 10), transparent |
+| `docs/assets/brand/mark-dark-480.png` | 480px dark-surface mark, transparent |
+| `docs/assets/brand/apple-touch-icon.png` | 180px; a 144px mark on Paper (iOS wants opaque) |
 | `docs/assets/brand/favicon-16/32/48.png` | small mark at 1×, 2×, 3× |
 | `docs/assets/brand/social-preview.png` | 1280 × 640 GitHub / OG card |
 | `docs/assets/fonts/Silkscreen-Bold.woff2` | the webfont the site serves |
 | `branding/build.py` | regenerates every one of the above |
 
 Rasters are always rendered at a **whole multiple** of the grid and then padded
-to the target size if the target is not a multiple. A 180px icon is a 128px mark
+to the target size if the target is not a multiple. A 180px icon is a 144px mark
 on a 180px field, not a 3.75× smear.
 
 To regenerate:
@@ -275,8 +282,10 @@ new colours, and removing them would mean forking the theme.
 
 ## What not to do
 
-- **Do not put the free mark on a light background.** Cream on Paper is 1.12:1.
-  Use the badge.
+- **Do not put a background plate behind the mark.** It is drawn to stand free.
+  Pick the variant that matches the surface instead.
+- **Do not use the dark-surface variant on light paper.** Its Muted keyline is
+  3.10:1 against Paper's near-white and the case dissolves into the page.
 - **Do not use Accent `#E0533D` as a text colour on a light background.** 3.63:1
   fails AA. Accent deep `#B33E2B` is the light-mode text accent.
 - **Do not scale the full mark below 48px**, and do not scale the small mark

@@ -33,7 +33,14 @@ PAL = {
     "e": "#F1EBE4",  # envelope paper                             (Surface light)
     "r": "#E0533D",  # chevron, blush, envelope seams, power LED  (Accent light)
 }
-FIELD = "#17130F"  # badge field                                  (Paper dark)
+# The keyline is the only value that differs between the two variants: on light
+# paper the cream case needs Ink to hold its silhouette (cream on Paper is
+# 1.12:1); on a dark page Ink would be invisible and Muted draws the same edge
+# the reference does.
+PAL_LIGHT = dict(PAL, o="#1F1A17")   # Ink (light)  - for light surfaces
+PAL_DARK = dict(PAL, o="#6B625C")    # Muted (light) - for dark surfaces
+FIELD = "#17130F"  # social card background                       (Paper dark)
+PAPER = "#FBF8F5"  # opaque icon background                        (Paper light)
 INK = "#1F1A17"    # wordmark on light surfaces                   (Ink light)
 CREAM = "#F4EFEA"  # wordmark on dark surfaces                    (Ink dark)
 MUTED_D = "#A79C93"
@@ -266,13 +273,6 @@ DESC = ("A cream CRT monitor with an angry face on its dark screen, biting "
 DESC_SM = "A cream CRT monitor with two angry eyes on its dark screen."
 
 
-def badge_field(w, h, cut):
-    """Rounded dark field, drawn on the same pixel grid as everything else."""
-    g = grid(w, h)
-    rrect(g, 0, 0, w - 1, h - 1, "s", cut=cut)
-    return svg_rects(rows(g))
-
-
 # ------------------------------------------------------------- wordmark ---
 class Wordmark:
     """Silkscreen Bold, converted to outlines so no consumer needs the font."""
@@ -349,46 +349,41 @@ def main():
     m48 = mark48()
     m16 = mark16()
 
-    # 1. free marks (transparent) - for dark surfaces --------------------------
-    write("mark.svg", svg_doc(48, 48, svg_rects(m48), "mail-muncher", DESC))
-    write("mark-small.svg",
-          svg_doc(16, 16, svg_rects(m16), "mail-muncher", DESC_SM))
+    # 1. the marks. Free-standing on a transparent background, in two keyline
+    #    weights - see PAL_LIGHT / PAL_DARK above.
+    for suffix, pal in (("", PAL_LIGHT), ("-dark", PAL_DARK)):
+        write(f"mark{suffix}.svg",
+              svg_doc(48, 48, svg_rects(m48, pal=pal), "mail-muncher", DESC))
+        write(f"mark-small{suffix}.svg",
+              svg_doc(16, 16, svg_rects(m16, pal=pal), "mail-muncher", DESC_SM))
 
-    # 2. badge marks - a dark field so the cream case survives light pages -----
-    write("mark-badge.svg",
-          svg_doc(64, 64, badge_field(64, 64, 4) + svg_rects(m48, 8, 8),
-                  "mail-muncher", DESC))
-    write("mark-small-badge.svg",
-          svg_doc(16, 16, badge_field(16, 16, 1) + svg_rects(m16),
-                  "mail-muncher", DESC_SM))
-
-    # 3. lockups: small mark + Silkscreen Bold wordmark ------------------------
+    # 2. lockups: small mark + Silkscreen Bold wordmark ------------------------
     wm = Wordmark(FONT)
-    for name, fill, field in (("lockup.svg", INK, True),
-                              ("lockup-dark.svg", CREAM, False)):
-        body = badge_field(16, 16, 1) if field else []
-        body += svg_rects(m16)
+    for name, pal, fill in (("lockup.svg", PAL_LIGHT, INK),
+                            ("lockup-dark.svg", PAL_DARK, CREAM)):
+        body = svg_rects(m16, pal=pal)
         # font-size 8 units => one font pixel is one mark pixel
         paths, tw = wm.paths("mail-muncher", 8, 20, 12, fill)
         write(name, svg_doc(int(20 + tw + 1), 16, body + paths,
                             "mail-muncher", DESC_SM))
 
-    # 4. rasters ---------------------------------------------------------------
-    png("mark-badge.svg", "mark-512.png", 512)          # 64 * 8
-    png("mark.svg", "mark-dark-480.png", 480)           # 48 * 10
-    png_padded("mark-badge.svg", "apple-touch-icon.png", 180, 2, 64, FIELD)
-    png("mark-small-badge.svg", "favicon-16.png", 16)
-    png("mark-small-badge.svg", "favicon-32.png", 32)
-    png("mark-small-badge.svg", "favicon-48.png", 48)
+    # 3. rasters ---------------------------------------------------------------
+    png("mark.svg", "mark-480.png", 480)                # 48 * 10
+    png("mark-dark.svg", "mark-dark-480.png", 480)
+    png("mark-small.svg", "favicon-16.png", 16)
+    png("mark-small.svg", "favicon-32.png", 32)
+    png("mark-small.svg", "favicon-48.png", 48)
+    # iOS composites the icon onto its own background, so this one is opaque.
+    png_padded("mark.svg", "apple-touch-icon.png", 180, 3, 48, PAPER)
     # 4x the 16-unit lockup grid; a PNG fallback for anywhere SVG is awkward.
     png("lockup.svg", "lockup-408.png", 408, 64)
     png("lockup-dark.svg", "lockup-dark-408.png", 408, 64)
 
-    # 5. social preview --------------------------------------------------------
+    # 4. social preview --------------------------------------------------------
     body = [
         f'<rect width="1280" height="640" fill="{FIELD}"/>',
         '<g transform="translate(96 112) scale(9)">'
-        + "".join(svg_rects(m48)) + "</g>",
+        + "".join(svg_rects(m48, pal=PAL_DARK)) + "</g>",
     ]
     body += wm.paths("mail-muncher", 64, 576, 288, CREAM)[0]
     body += wm.paths("an email client for AI agents", 24, 576, 344, MUTED_D)[0]
