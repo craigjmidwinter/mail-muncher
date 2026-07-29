@@ -380,6 +380,9 @@ def main():
     png("mark-small-badge.svg", "favicon-16.png", 16)
     png("mark-small-badge.svg", "favicon-32.png", 32)
     png("mark-small-badge.svg", "favicon-48.png", 48)
+    # 4x the 16-unit lockup grid; a PNG fallback for anywhere SVG is awkward.
+    png("lockup.svg", "lockup-408.png", 408, 64)
+    png("lockup-dark.svg", "lockup-dark-408.png", 408, 64)
 
     # 5. social preview --------------------------------------------------------
     body = [

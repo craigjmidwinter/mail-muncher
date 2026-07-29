@@ -221,6 +221,8 @@ generator, and the font's build-time source.
 | `docs/assets/brand/mark-small-badge.svg` | small mark on the dark field |
 | `docs/assets/brand/lockup.svg` | small mark + wordmark, for light surfaces |
 | `docs/assets/brand/lockup-dark.svg` | same, cream wordmark, for dark surfaces |
+| `docs/assets/brand/lockup-408.png` | lockup at 4x (408 x 64), for anywhere SVG is awkward |
+| `docs/assets/brand/lockup-dark-408.png` | same, dark-surface variant |
 | `docs/assets/brand/mark-512.png` | 512px badge (64 × 8) |
 | `docs/assets/brand/mark-dark-480.png` | 480px free mark (48 × 10) |
 | `docs/assets/brand/apple-touch-icon.png` | 180px; a 128px badge padded to 180 |
