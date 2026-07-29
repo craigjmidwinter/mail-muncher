@@ -51,24 +51,16 @@ jobs:
       - name: Test
         run: go test -race ./...
 
-  cross-compile:
-    name: cross-compile
+  # Cross-compiles all four release targets *through* the release config, so a
+  # broken .goreleaser.yml fails here on every push rather than at tag time.
+  release-dry-run:
+    name: release dry run
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: darwin
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -77,9 +69,23 @@ jobs:
           check-latest: true
           cache: true
 
-      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+      - name: Validate release config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: go build -o /dev/null ./cmd/mail-muncher
+          HOMEBREW_TAP_GITHUB_TOKEN: ""
+
+      - name: Build a snapshot release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish,sign,announce
+        env:
+          # Empty on purpose: exercises the "no tap token" path, which must
+          # skip the Homebrew update rather than fail the release.
+          HOMEBREW_TAP_GITHUB_TOKEN: ""
+
+      - name: Show what a release would contain
+        run: ls -l dist/*.tar.gz dist/checksums.txt

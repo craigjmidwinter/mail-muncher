@@ -3,7 +3,7 @@ PKG     := ./cmd/mail-muncher
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
-.PHONY: all build test lint fmt tidy clean
+.PHONY: all build test lint fmt tidy clean release-check snapshot
 
 all: build
 
@@ -29,5 +29,16 @@ fmt:
 tidy:
 	go mod tidy
 
+# Validate .goreleaser.yml without building anything.
+release-check:
+	HOMEBREW_TAP_GITHUB_TOKEN="$$HOMEBREW_TAP_GITHUB_TOKEN" goreleaser check
+
+# Build the full release locally -- all four targets, archives, checksums,
+# Homebrew cask -- without publishing or signing. Output lands in ./dist.
+snapshot:
+	HOMEBREW_TAP_GITHUB_TOKEN="$$HOMEBREW_TAP_GITHUB_TOKEN" \
+		goreleaser release --snapshot --clean --skip=publish,sign,announce
+
 clean:
 	rm -f $(BINARY)
+	rm -rf dist

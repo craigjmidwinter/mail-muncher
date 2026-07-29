@@ -226,22 +226,104 @@ years more mileage.
 
 ## Install
 
-Requires Go 1.25 or newer.
+No Go toolchain required for the first two options.
+
+### Homebrew
 
 ```bash
-git clone https://github.com/craigjmidwinter/mail-muncher
-cd mail-muncher
-make build          # -> ./mail-muncher
+brew install craigjmidwinter/tap/mail-muncher
 ```
 
-Or install straight into `$GOBIN`:
+That taps [craigjmidwinter/homebrew-tap](https://github.com/craigjmidwinter/homebrew-tap)
+and installs a prebuilt binary. `brew upgrade mail-muncher` tracks new
+releases.
+
+### Download a binary
+
+Every [release](https://github.com/craigjmidwinter/mail-muncher/releases/latest)
+ships archives for macOS and Linux on both amd64 and arm64, plus a
+`checksums.txt` and a signature over it.
+
+```bash
+# Latest release, without the leading v. Set this by hand to pin a version.
+VERSION=$(curl -fsSL https://api.github.com/repos/craigjmidwinter/mail-muncher/releases/latest \
+  | sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p')
+
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')     # darwin | linux
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
+curl -fsSLO "https://github.com/craigjmidwinter/mail-muncher/releases/download/v${VERSION}/mail-muncher_${VERSION}_${OS}_${ARCH}.tar.gz"
+tar xzf "mail-muncher_${VERSION}_${OS}_${ARCH}.tar.gz" mail-muncher
+sudo install -m 0755 mail-muncher /usr/local/bin/mail-muncher
+```
+
+On macOS, a binary you downloaded yourself is quarantined by Gatekeeper. Clear
+it with `xattr -d com.apple.quarantine /usr/local/bin/mail-muncher`, or use the
+Homebrew install above, which does this for you.
+
+#### Verify what you downloaded
+
+This tool reads your mail. Check that the archive is the one the release
+workflow built. First the checksum:
+
+```bash
+curl -fsSLO "https://github.com/craigjmidwinter/mail-muncher/releases/download/v${VERSION}/checksums.txt"
+
+# Linux
+sha256sum --check --ignore-missing checksums.txt
+# macOS
+shasum -a 256 --check --ignore-missing checksums.txt
+```
+
+Then the signature over `checksums.txt`. Releases are signed keylessly with
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) — there
+is no public key to fetch and no private key anyone has to guard. The
+signing certificate is issued to the release workflow's own GitHub OIDC
+identity and recorded in the public Rekor transparency log, so what you are
+checking is "this was built by `release.yml` in this repo, from a tag":
+
+```bash
+curl -fsSLO "https://github.com/craigjmidwinter/mail-muncher/releases/download/v${VERSION}/checksums.txt.sig"
+curl -fsSLO "https://github.com/craigjmidwinter/mail-muncher/releases/download/v${VERSION}/checksums.txt.pem"
+
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp '^https://github\.com/craigjmidwinter/mail-muncher/\.github/workflows/release\.yml@refs/tags/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
+`Verified OK` means the checksum file is authentic; the `sha256sum` step then
+ties your archive to it.
+
+### `go install`
+
+The right path if you already have Go 1.25 or newer:
 
 ```bash
 go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest
 ```
 
-`make build` stamps the version from `git describe`; `go install` and plain
-`go build` leave it as `dev`.
+Note that `go install` builds report `dev` for `--version`, because the version
+is stamped at link time and the `go` tool does not do it. Released binaries and
+`make build` report the real tag. If you file a bug from a `go install` build,
+say which commit you installed.
+
+### Build from source
+
+```bash
+git clone https://github.com/craigjmidwinter/mail-muncher
+cd mail-muncher
+make build          # -> ./mail-muncher, version stamped from git describe
+```
+
+`make snapshot` builds the full set of release archives locally (requires
+[goreleaser](https://goreleaser.com)) if you want to check what a release would
+contain.
+
+The example configs referenced below live in [`examples/`](examples/); they are
+also bundled inside every release archive, so a binary download has them too.
 
 ### As a Claude Code skill
 

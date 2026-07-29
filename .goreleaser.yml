@@ -1,0 +1,141 @@
+version: 2
+
+project_name: mail-muncher
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - id: mail-muncher
+    main: ./cmd/mail-muncher
+    binary: mail-muncher
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    # Match what `make build` stamps: a leading-v version string, so
+    # `mail-muncher --version` reports the tag exactly.
+    ldflags:
+      - -s -w -X main.version=v{{ .Version }}
+
+archives:
+  - id: mail-muncher
+    ids:
+      - mail-muncher
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - src: examples/*.yml
+        dst: examples
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+# Keyless signing with cosign + GitHub OIDC. No long-lived key to manage: the
+# signature is bound to this workflow's identity and logged in Rekor.
+signs:
+  - id: cosign-checksums
+    cmd: cosign
+    signature: ${artifact}.sig
+    certificate: ${artifact}.pem
+    args:
+      - sign-blob
+      - --output-signature=${signature}
+      - --output-certificate=${certificate}
+      - ${artifact}
+      - --yes
+    artifacts: checksum
+    output: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^katra:"
+      - Merge pull request
+      - Merge branch
+
+homebrew_casks:
+  - name: mail-muncher
+    ids:
+      - mail-muncher
+    binaries:
+      - mail-muncher
+    repository:
+      owner: craigjmidwinter
+      name: homebrew-tap
+      branch: main
+      # Cross-repo push: the default GITHUB_TOKEN cannot write to another
+      # repository, so this needs a PAT in the HOMEBREW_TAP_GITHUB_TOKEN
+      # secret. When that secret is absent the env var is empty and
+      # skip_upload below turns the tap update into a no-op rather than a
+      # hard failure -- the release still ships binaries.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    skip_upload: '{{ if .Env.HOMEBREW_TAP_GITHUB_TOKEN }}false{{ else }}true{{ end }}'
+    directory: Casks
+    homepage: https://github.com/craigjmidwinter/mail-muncher
+    description: An email client for AI agents -- filtered, read-only Gmail delivered to disk as .eml + markdown, and served over MCP.
+    license: MIT
+    commit_author:
+      name: goreleaser[bot]
+      email: 1444982+goreleaser[bot]@users.noreply.github.com
+    commit_msg_template: "mail-muncher {{ .Tag }}"
+    # The release binaries are not Apple-notarized, so Gatekeeper quarantines
+    # them on download. Strip the attribute the way Homebrew itself recommends
+    # for unsigned binaries.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mail-muncher"]
+          end
+
+release:
+  github:
+    owner: craigjmidwinter
+    name: mail-muncher
+  prerelease: auto
+  footer: |
+    ## Install
+
+    ```sh
+    brew install craigjmidwinter/tap/mail-muncher
+    ```
+
+    Or download an archive below and verify it:
+
+    ```sh
+    # 1. checksum
+    sha256sum --check --ignore-missing checksums.txt
+
+    # 2. signature over the checksum file (keyless, no key to fetch)
+    cosign verify-blob \
+      --certificate checksums.txt.pem \
+      --signature checksums.txt.sig \
+      --certificate-identity-regexp '^https://github\.com/craigjmidwinter/mail-muncher/\.github/workflows/release\.yml@refs/tags/' \
+      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+      checksums.txt
+    ```
