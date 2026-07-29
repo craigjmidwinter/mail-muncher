@@ -21,8 +21,8 @@
 // whole multiples of 8px, and it has no lowercase forms - every heading set in
 // it renders as capitals. Both facts constrain where it may be used:
 //
-//   yes  h1, h2, the wordmark, the social card
-//   no   body copy, h3 and below, nav lists, tables, code, anything under 16px
+//   yes  h1, the wordmark, the social card
+//   no   body copy, h2 and below, nav lists, tables, code, anything under 16px
 //
 // Coverage was checked against the glyphs this project's prose actually uses:
 // em dash, en dash, curly quotes, middot, bullet, ellipsis, Latin-1 accents and
@@ -39,20 +39,14 @@ h1,
   letter-spacing: 2px;
 }
 
-h2,
-.text-beta {
-  font-family: $mm-display;
-  font-size: 24px !important;
-  font-weight: 700;
-  line-height: 32px;
-  letter-spacing: 1px;
-}
+// Silkscreen is a page title only. A reference page carries a dozen or more
+// h2s, and a bitmap face at that density stops being character and starts
+// being noise, so h2 and below keep the theme's text stack.
 
-// Reference headings are frequently a bare config key or tool name. Those are
+// A page title is frequently a bare config key or tool name. Those are
 // case-sensitive identifiers, and a capitals-only display face would misstate
-// them, so code inside a heading keeps the monospace stack and its own case.
-h1 code,
-h2 code {
+// them, so code inside a title keeps the monospace stack and its own case.
+h1 code {
   font-family: $mono-font-family;
   font-size: 0.8em;
   font-weight: 400;
