@@ -110,7 +110,10 @@ to a model, open the attachments from the sibling directory:
 ---
 subject: 'Re: Your application for Senior Engineer'
 from: Jane Doe <jane@acme.com>
+from_address: jane@acme.com
+from_addresses: [jane@acme.com]
 to: [me@example.com]
+to_addresses: [me@example.com]
 date: 2026-07-28T09:15:00Z
 message_id: <abc123@acme.com>
 thread_id: 18fe9c0d1a2b3c4d
@@ -679,9 +682,14 @@ YAML frontmatter, then the body, then links to any attachments.
   `text/html` part converted to markdown; otherwise the literal `*(no body)*`.
   Line endings are normalized to LF, trailing whitespace is stripped per line,
   and leading and trailing blank lines are trimmed.
-- **Frontmatter** always carries `subject`, `from`, `to`, `date`, `message_id`,
-  `thread_id`, `thread_id_source`, `account`, `rule`. `cc`, `in_reply_to`,
-  `labels` and `attachments` are omitted when empty. It is produced with a YAML
+- **Frontmatter** always carries `subject`, `from`, `from_address`,
+  `from_addresses`, `to`, `to_addresses`, `date`, `message_id`, `thread_id`,
+  `thread_id_source`, `account`, `rule`. `cc`, `cc_addresses`, `in_reply_to`,
+  `labels` and `attachments` are omitted when empty. **Parse addresses from the
+  `*_address` / `*_addresses` fields, never from `from`/`to`/`cc`** — those are
+  display strings, and a sender-chosen display name containing `<`, `>` or `,`
+  makes them ambiguous. The machine-readable fields carry bare addr-specs and
+  cannot be spoofed that way. It is produced with a YAML
   encoder, not string formatting, so a subject full of quotes and colons cannot
   break the parse — which also means **you need a real YAML parser to read it**.
   An emoji subject arrives double-quoted with a `\U0001F389` escape, and a
