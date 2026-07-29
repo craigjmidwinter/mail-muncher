@@ -1,7 +1,7 @@
 ---
 title: The run manifest
 layout: default
-nav_order: 5
+nav_order: 6
 description: >-
   The machine-readable JSON record mail-muncher writes for every cycle. Field
   names an agent codes against — stored, skipped, quarantined and summary.

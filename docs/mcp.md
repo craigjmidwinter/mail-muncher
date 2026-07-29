@@ -1,7 +1,7 @@
 ---
 title: The MCP server
 layout: default
-nav_order: 6
+nav_order: 7
 description: >-
   mail-muncher mcp serves the archive to an agent over the Model Context
   Protocol on stdio — list_rules, list_messages, read_message, search, sync.

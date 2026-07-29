@@ -180,6 +180,9 @@ and ships a skill that teaches an agent to use the tool:
 | [Gmail setup](gmail-setup.md) | The Google Cloud walkthrough: project, API, consent screen, Desktop app OAuth client — plus every OAuth error message and its fix. Read the consent-screen section before you start. |
 | [Configuration](configuration.md) | Every config key, its default, its validation rule, and its failure mode. |
 | [Filters](filters.md) | The complete match-tree language — combinators, every predicate, the externally-owned domain file format — plus a cookbook of real rules. |
+| [Output format](output-format.md) | The on-disk contract programs code against: directory layout, filename convention, every frontmatter key, why you need a real YAML parser, and how to enumerate a delivery tree without ingesting sender-controlled attachments. Read this before writing a consumer. |
+| [The run manifest](manifest.md) | The `--json` contract, field by field. |
+| [The MCP server](mcp.md) | Client wiring, and every tool's arguments and return shape. |
 | [Architecture](architecture.md) | The pipeline, its seams, and where a change belongs. |
 
 Also in the repository:

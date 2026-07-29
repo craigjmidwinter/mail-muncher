@@ -1,7 +1,7 @@
 ---
 title: Architecture
 layout: default
-nav_order: 7
+nav_order: 8
 description: >-
   How mail-muncher is put together — the provider and sink seams, the fetch and
   filter pipeline, and where a change belongs when you go to make one.

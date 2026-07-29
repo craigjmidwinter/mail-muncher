@@ -20,6 +20,9 @@ config.local.yml
 /credentials.json
 /state/
 
+# Python bytecode, from running examples/read_delivered.py
+__pycache__/
+
 # Editor / OS noise
 .DS_Store
 .idea/

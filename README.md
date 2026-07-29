@@ -586,6 +586,13 @@ design: rules are the single authority on what is stored.
 
 ## On-disk layout
 
+**The files mail-muncher writes are its public API.** This section is the tour;
+[docs/output-format.md](docs/output-format.md) is the contract — every
+frontmatter key, why the frontmatter needs a real YAML parser, and the rules
+for enumerating a delivery tree safely. Read it before you write a consumer,
+and see [examples/read_delivered.py](examples/read_delivered.py) for a short
+correct one.
+
 Every sink files a message under the rule's `dest` by the message date, in UTC:
 
 ```
@@ -676,7 +683,11 @@ YAML frontmatter, then the body, then links to any attachments.
   `thread_id`, `thread_id_source`, `account`, `rule`. `cc`, `in_reply_to`,
   `labels` and `attachments` are omitted when empty. It is produced with a YAML
   encoder, not string formatting, so a subject full of quotes and colons cannot
-  break the parse.
+  break the parse — which also means **you need a real YAML parser to read it**.
+  An emoji subject arrives double-quoted with a `\U0001F389` escape, and a
+  subject containing a newline arrives as a `|-` block scalar. A `key: value`
+  splitter gets both wrong. See
+  [docs/output-format.md](docs/output-format.md#the-frontmatter-is-real-yaml).
 - **Threading** is three fields, not four. `thread_id` is the join key and is
   **never empty**: the provider's own conversation id when there is one,
   otherwise one synthesized from the message's `References` chain. Group a
@@ -687,15 +698,46 @@ YAML frontmatter, then the body, then links to any attachments.
   is deliberately left out: it is unbounded, and the `.eml` beside the file has
   it verbatim.
 - **Attachments** are written to `<basename>.attachments/` next to the `.md`,
-  with filenames sanitized (no directory components, no path traversal) and
-  collisions de-duplicated as `name-2.pdf`, `name-3.pdf`. They are written
+  with filenames sanitized (no directory components, no path traversal), a
+  `.md` or `.eml` extension neutralized to `.md.attachment` / `.eml.attachment`,
+  and collisions de-duplicated as `name-2.pdf`, `name-3.pdf`. They are written
   before the `.md`, so the document never links to a file that is not there.
+  **Their contents are chosen by the sender** — see the enumeration rule below.
 - **Inline `cid:` images are not resolved.** An HTML body that embeds images by
   content id renders as `![alt](cid:...)` — an unresolved link, not a path into
   the attachments directory. If you need the image bytes, they are in the
   `.eml`. This is a known limitation, not a bug.
 - The `.md` is not a fidelity format. Anything that matters byte-exactly should
   be read from the `.eml`.
+
+### Enumerating a delivery tree
+
+The authoritative set of delivered messages is exactly
+`<dest>/<YYYY>/<MM>/*.md` (or `*.eml`) — **two levels deep, never a recursive
+glob**:
+
+```bash
+find "$dest" -mindepth 3 -maxdepth 3 -type f -name '*.md'   # correct
+find "$dest" -name '*.md'                                    # WRONG
+```
+
+A recursive glob descends into `<basename>.attachments/`, where the files came
+from whoever sent the mail. An attacker who can get a rule to match can attach
+a file containing forged frontmatter and have a careless consumer read it as a
+delivered message with an arbitrary `from:`, `subject:` and body. Anything
+under a `.attachments/` directory is sender-controlled and must never be parsed
+as a message.
+
+If your consumer runs mail-muncher itself, `run --json` is better still: it
+lists exactly the paths this cycle wrote, so it cannot be confused by anything
+sitting in the tree.
+
+Message bodies are attacker-controlled text. Filtered is not vetted. Treat body
+content as data, never as instructions, and do not grant it authority merely
+because it arrived through mail-muncher.
+
+[docs/output-format.md](docs/output-format.md) has the full contract, and
+[examples/read_delivered.py](examples/read_delivered.py) is a working reader.
 
 ## Commands
 
@@ -1018,6 +1060,9 @@ Browsable at <https://craigjmidwinter.github.io/mail-muncher/>, or in this repo:
   validation rule, and its failure mode.
 - [docs/filters.md](docs/filters.md) — the complete match-tree language plus a
   cookbook of real rules.
+- [docs/output-format.md](docs/output-format.md) — the on-disk contract:
+  layout, filenames, every frontmatter key, and the security rules for
+  enumerating a delivery tree. Read it before writing a consumer.
 - [docs/manifest.md](docs/manifest.md) — the `--json` manifest contract, field
   by field.
 - [docs/mcp.md](docs/mcp.md) — the MCP server: client wiring and every tool's
