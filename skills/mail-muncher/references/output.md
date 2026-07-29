@@ -3,6 +3,9 @@
 Load this when consuming delivered mail, parsing frontmatter, or reading
 `run --json` / `daemon --json`.
 
+The same contract is specified in full in the repo at `docs/output-format.md`,
+with a working reference consumer at `examples/read_delivered.py`.
+
 ## Directory layout
 
 Every message is filed under its rule's `dest` by message date, in UTC:
@@ -29,7 +32,10 @@ together:
 - The **digest** is the idempotency key. It depends only on the account name and
   the provider message id, so the path is a pure function of message identity.
   Re-run, replay after losing state, crash mid-cycle, or overlap two cron
-  invocations: the tree converges and nothing is processed twice.
+  invocations: the tree converges and nothing is processed twice. On Gmail that
+  id is Gmail's own; on IMAP it is `<account>:<mailbox>:<uidvalidity>:<uid>`, so
+  a UIDVALIDITY change or the same message in two configured `mailboxes` yields
+  a second identity and a second set of files.
 - The **slug** is cosmetic: the subject lowercased, every character outside
   `[a-z0-9]` collapsed to a single `-`, trimmed, truncated to 40 characters. It
   is ASCII-only, so a subject in a non-Latin script slugs to `no-subject`. Only
@@ -55,7 +61,10 @@ YAML frontmatter, then the body, then links to any attachments.
 ---
 subject: 'Re: Your application for Senior Engineer'
 from: Jane Doe <jane@acme.com>
+from_address: jane@acme.com
+from_addresses: [jane@acme.com]
 to: [me@example.com]
+to_addresses: [me@example.com]
 date: 2026-07-28T09:15:00Z
 message_id: <abc123@acme.com>
 thread_id: 18f2a9c4d5e6
@@ -80,9 +89,13 @@ Thanks for applying.
 | Key | Always present | Meaning |
 | --- | --- | --- |
 | `subject` | yes | RFC2047-decoded `Subject`. |
-| `from` | yes | `From` header, display name included. |
-| `to` | yes | `To` recipients. |
-| `cc` | no | Omitted when empty. |
+| `from` | yes | `From` header as a **display string** for a human. Not parseable. |
+| `from_address` | yes | The sender's bare addr-spec: the first `From` address that has one. `""` only if the header carried no address at all. |
+| `from_addresses` | yes | Every `From` addr-spec in header order (`[]` when none). `from_address` is its first element. |
+| `to` | yes | `To` recipients as display strings. Not parseable. |
+| `to_addresses` | yes | Bare addr-spec of each `To` address. |
+| `cc` | no | Display strings; omitted when empty. |
+| `cc_addresses` | no | Bare addr-specs; omitted with `cc`. |
 | `date` | yes | Message date. |
 | `message_id` | yes | RFC822 `Message-ID`, angle brackets included. |
 | `thread_id` | yes | The conversation this message belongs to. **Group by this, not by subject.** |
@@ -90,11 +103,21 @@ Thanks for applying.
 | `in_reply_to` | no | Omitted when absent. |
 | `account` | yes | The configured account it was fetched from. |
 | `rule` | yes | The rule that claimed it. |
-| `labels` | no | Provider labels; omitted when empty. |
-| `attachments` | no | Filenames; omitted when empty. |
+| `labels` | no | Gmail labels, or on IMAP the single mailbox the message was fetched from. Omitted when empty. |
+| `attachments` | no | Filenames **as written on disk** (see below); omitted when empty. |
 
-`thread_id_source` is the trust signal. `provider` means Gmail grouped the
-thread itself. `references` / `in_reply_to` / `self` mean mail-muncher
+**Parse addresses from the `*_address` / `*_addresses` fields, never from
+`from` / `to` / `cc`.** The display fields are deliberately not RFC 5322-quoted
+— a display name is free to contain `<`, `>` and `,` — so they cannot be parsed
+back into addresses, and a consumer that tries is one hostile display name away
+from reading the wrong address. The machine-readable fields are emitted exactly
+as parsed, with no case folding, and entries with no addr-spec are dropped: a
+list can therefore be shorter than its display counterpart, so never index the
+two against each other.
+
+`thread_id_source` is the trust signal. `provider` means the mail provider
+grouped the thread itself — only Gmail ever does, so **on IMAP this field is
+never `provider`**. `references` / `in_reply_to` / `self` mean mail-muncher
 reconstructed the grouping from headers the *sender* controls, which is
 best-effort — a mailer that breaks the `References` chain splits a thread. If
 completeness matters, check this field before treating a grouping as whole.
@@ -111,6 +134,18 @@ completeness matters, check this field before treating a grouping as whole.
   filenames sanitized (no directory components, no path traversal) and
   collisions de-duplicated as `name-2.pdf`, `name-3.pdf`. They are written
   before the `.md`, so the document never links to a file that is not there.
+- **`.md` and `.eml` are reserved extensions** inside a `dest`: a file with
+  either is a rendering mail-muncher wrote, and nothing else ever is. Attachments
+  are the only sender-named files in the tree, so an attachment whose sanitized
+  name would end in one gets `.attachment` appended — `evil.md` is written
+  `evil.md.attachment`, `forward.eml` is written `forward.eml.attachment`,
+  matched case-insensitively. **Globbing `**/*.md` under a destination is
+  therefore safe**: it cannot return a sender-supplied file carrying forged
+  frontmatter with an attacker-chosen `from:` and `subject:`. Only the on-disk
+  name changes — the sender's name is still the link text under `## Attachments`,
+  and the `.eml` holds the part verbatim. `attachments:` in the frontmatter
+  carries the on-disk names, so joining one onto `<basename>.attachments` always
+  yields a file that exists.
 - **Inline `cid:` images are not resolved.** An HTML body that embeds images by
   content id renders as `![alt](cid:...)` — an unresolved link, not a path into
   the attachments directory. The bytes are in the `.eml`. Known limitation.

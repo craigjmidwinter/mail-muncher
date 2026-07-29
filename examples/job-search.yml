@@ -25,8 +25,12 @@ accounts:
   - # Referenced by `rules[].account` and used as the state file name.
     name: personal
 
-    # "gmail" is the only provider implemented today, and is also the default
-    # when this key is omitted. IMAP is planned; see the README.
+    # "gmail" reads through the Gmail API, where Google itself enforces the
+    # read-only scope. It is also the default when this key is omitted, so
+    # write it out. The cost is about ten minutes in the Google Cloud Console
+    # plus a token to re-issue weekly (docs/gmail-setup.md); `provider: imap`
+    # does the same job in about two minutes with an app password and works
+    # against Gmail too. See examples/imap.yml.
     provider: gmail
 
     gmail:

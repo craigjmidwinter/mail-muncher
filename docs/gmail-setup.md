@@ -3,23 +3,38 @@ title: Gmail setup
 layout: default
 nav_order: 2
 description: >-
-  Create your own Google Cloud OAuth client for mail-muncher and authorize it
-  with the single gmail.readonly scope. A one-time setup of about ten minutes.
+  The Gmail API path only: create your own Google Cloud OAuth client and
+  authorize it with the single gmail.readonly scope. About ten minutes. The
+  IMAP path needs none of this.
 ---
 
 # Gmail setup
 
-mail-muncher ships no OAuth client of its own. You create one in your own
-Google Cloud project, download its JSON, and it stays yours — Google's quota,
-Google's audit log, your credentials on your disk. This is a one-time setup of
-about ten minutes, mostly clicking through console screens.
+**This page is one of two ways in, and it is the longer one.** It applies only
+to `provider: gmail`. If you have not chosen a provider yet, start at the
+[quickstart](index.md#quickstart): `provider: imap` reaches working mail in about
+two minutes with an app password, no Google Cloud project, no consent screen and
+no `auth` command, and it works against Gmail as well as Fastmail, iCloud, Proton
+Bridge, work accounts and self-hosted servers.
 
-The only scope requested is `gmail.readonly`. The resulting token cannot send,
-delete, label, or modify anything in the mailbox.
+The reason to be here anyway is a real one: on this path **Google** enforces
+read-only. The token holds the single scope `gmail.readonly` and cannot send,
+delete, label, or modify anything in the mailbox, whatever mail-muncher does. On
+IMAP the credential is an ordinary app password — a full mail credential — and
+read-only is enforced by mail-muncher's own code instead. If you want that
+guarantee to come from somewhere other than this program, read on.
 
-**Read [Step 3](#3-configure-the-oauth-consent-screen) before you start.** A
-consent screen left in *Testing* mode expires its refresh token after seven
-days, which will silently stop unattended runs a week after everything works.
+The two costs, before you start:
+
+- **About ten minutes** in the Google Cloud Console, mostly clicking through
+  console screens. mail-muncher ships no OAuth client of its own — `gmail.readonly`
+  is a Google restricted scope — so you create one in your own project, download
+  its JSON, and it stays yours: Google's quota, Google's audit log, your
+  credentials on your disk.
+- **A token that expires weekly.** Read
+  [Step 3](#3-configure-the-oauth-consent-screen) before you start: a consent
+  screen left in *Testing* mode expires its refresh token after seven days, which
+  will silently stop unattended runs a week after everything works.
 
 ---
 

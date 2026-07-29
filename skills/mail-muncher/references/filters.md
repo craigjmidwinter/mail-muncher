@@ -43,7 +43,7 @@ match:
 | `subject_regex` | RE2 pattern | the pattern matches the decoded `Subject` |
 | `header` | `{name: X-Foo, regex: ...}` | the pattern matches any value of that header |
 | `has_attachment` | `true` / `false` | the message does (or does not) carry a real attachment |
-| `label` | label name | the message carries that provider label, compared exactly |
+| `label` | label name | the message carries that label: a Gmail label, or on IMAP the name of the mailbox it was fetched from. Compared exactly |
 | `older_than` | Go duration | the message `Date` is further in the past than the duration |
 | `newer_than` | Go duration | the message `Date` is more recent than the duration |
 
@@ -72,7 +72,9 @@ One worked example each:
 - has_attachment: true
 
 # Gmail labels, exactly as shown in the UI. Nested labels use "Parent/Child";
-# system labels are upper case (INBOX, SENT, UNREAD, STARRED).
+# system labels are upper case (INBOX, SENT, UNREAD, STARRED). On IMAP the
+# value is a mailbox name from `imap.mailboxes`, verbatim, including the
+# server's hierarchy separator (usually "/" or ".").
 - label: INBOX
 
 # Message Date older than 90 days / newer than a day.
@@ -88,6 +90,8 @@ One worked example each:
 - `has_attachment` counts parts marked `Content-Disposition: attachment`.
   Inline images referenced by `cid:` are not attachments.
 - `label` is case-sensitive and exact — `label: inbox` does not match `INBOX`.
+  On IMAP a message only ever carries the one mailbox it was fetched from, and
+  only mailboxes listed in `imap.mailboxes` are fetched at all.
 - `older_than` / `newer_than` compare against the message `Date` header, falling
   back to the provider's internal date when the header is missing or
   unparseable. A message with no usable date matches neither.
@@ -98,7 +102,9 @@ One worked example each:
 - Use `true` / `false` for `has_attachment`. YAML 1.2 treats `yes` and `no` as
   strings and mail-muncher rejects them.
 - `gmail.query` is **not** a filter on what gets kept. It only bounds what a
-  full scan asks Gmail for. The rules are the only authority.
+  full scan asks Gmail for. The rules are the only authority. There is no IMAP
+  equivalent; on IMAP what gets fetched is bounded by `imap.mailboxes` and
+  `imap.initial_lookback`.
 
 ## Domain-list file format
 
@@ -147,4 +153,5 @@ Check in this order:
 3. Is a `from_domains_file` missing? `mail-muncher validate` reports it as a
    warning naming the exact path.
 4. Is the regex anchored or case-sensitive when it should not be?
-5. Was the message even fetched? A narrow `gmail.query` can starve a full scan.
+5. Was the message even fetched? A narrow `gmail.query` can starve a full scan;
+   on IMAP, a folder missing from `imap.mailboxes` is never read at all.

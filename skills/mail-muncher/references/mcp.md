@@ -37,9 +37,33 @@ The config is read **once at startup**, exactly as `daemon` reads it: a
 re-resolved on every `list_rules` call, so a subscription change is visible
 immediately.
 
-Startup fails with exit 1 on a config or validation error — before any client
-has connected, so a broken config is a visible startup error rather than a tool
-error buried in a transcript.
+## With no usable config
+
+Registering the server before there is a config is fine. It is **not** a dead
+server and not a bug to report.
+
+Launched by a client — stdin is a pipe — with a missing or unusable config, the
+server starts and speaks the protocol correctly:
+
+- `initialize` returns `instructions` that say the tools cannot return mail, that
+  this is not transient, that retrying will not help, and to relay the setup
+  guidance verbatim; the guidance text follows in the same field.
+- `tools/list` returns the **real five tool names** (`list_messages`,
+  `read_message`, `search_messages`, `list_rules`, `sync`), each described as
+  unavailable — not an empty list and not "unknown tool", which an agent working
+  from a cached tool list would read as version skew.
+- Any `tools/call` returns `isError: true` with that same guidance as its text
+  content, whatever arguments were sent.
+
+The guidance is also written to stderr at startup, where a client tees the server
+log. The process still exits **1** once the client hangs up.
+
+Run by hand instead — stdin a terminal, `/dev/null`, or a redirected file —
+`mcp` prints the guidance to stderr and exits 1 without serving, because serving
+would block forever with nobody on the other end.
+
+Fix it with `mail-muncher init`, then restart the server: config is read once at
+startup.
 
 ## Security envelope
 
@@ -51,7 +75,8 @@ error buried in a transcript.
   `from_domains_file` paths only, because those belong to the agent.
 - Four of the five tools cannot change anything. `sync` can only ever **add**
   files: it runs the same cycle `run` does, takes the same cross-process lock,
-  and holds the same `gmail.readonly` scope.
+  and is bound by the same read-only guarantee as the configured provider — the
+  `gmail.readonly` scope on Gmail, `EXAMINE` plus `BODY.PEEK[]` on IMAP.
 
 ## Tools
 

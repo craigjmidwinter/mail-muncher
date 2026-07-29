@@ -1,19 +1,38 @@
 # The smallest mail-muncher config that does something useful.
 #
 #   mail-muncher validate --config examples/minimal.yml
-#   mail-muncher auth     --config examples/minimal.yml
 #   mail-muncher run      --config examples/minimal.yml --dry-run
+#   mail-muncher run      --config examples/minimal.yml
 #
-# `state_dir` is omitted, so it defaults to ~/.local/state/mail-muncher.
+# There is no `auth` step in that list and no OAuth client to register: that is
+# what `provider: imap` buys you. `mail-muncher auth` is a Gmail-only command
+# and refuses an IMAP account outright.
+#
+# Everything omitted here takes its default: state_dir is
+# ~/.local/state/mail-muncher, imap.port is 993, imap.tls is true,
+# imap.mailboxes is [INBOX], imap.initial_lookback is 720h (30 days), and a
+# rule with no `formats` writes [eml].
+#
+# For the Gmail provider instead — read-only enforced by Google rather than by
+# this program, at the cost of about ten minutes in the Cloud Console and a
+# token to re-issue weekly — see examples/job-search.yml and docs/gmail-setup.md.
 
 accounts:
   - name: personal
-    gmail:
-      credentials_file: ~/.config/mail-muncher/credentials.json
-      token_file: ~/.config/mail-muncher/token.json
-      # `include_spam_trash` is omitted, so it defaults to false: mail in Spam
-      # and Trash is not fetched at all and never reaches your rules. See
-      # docs/configuration.md#include_spam_trash before turning it on.
+
+    # Omit this key and you get `gmail`, which needs an OAuth client you
+    # register yourself. Name it, and the whole credential is an app password.
+    provider: imap
+
+    imap:
+      host: imap.fastmail.com
+      username: you@fastmail.com
+
+      # THERE IS NO `password` KEY, on purpose. This command runs under
+      # /bin/sh -c and its stdout is the secret, so the credential stays in
+      # whatever your password manager already keeps it in. Use an app
+      # password, which you can revoke on its own.
+      password_cmd: pass show mail/fastmail
 
 rules:
   - name: receipts
