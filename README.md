@@ -1238,6 +1238,7 @@ personal: fetched=128 matched=6 stored=6 skipped=0 parse_errors=0 sink_errors=0 
 | `parse_errors` | messages | Messages that would not parse; logged and skipped. |
 | `sink_errors` | renderings | Write failures; logged and counted, cycle continues. |
 | `quarantined` | messages | Messages parked under the quarantine directory because they could not be delivered. |
+| `vanished` | messages | Messages the provider listed and then found no longer existed — deleted between the listing and the download. Skipped, and the cursor advanced past them. Only printed when non-zero. |
 
 The field list runs contiguously from `fetched=` to `duration=`, so anything
 unusual about the cycle is marked on the account label instead:
@@ -1247,6 +1248,12 @@ personal (dry-run): fetched=42 ...
 personal (degraded, state held): fetched=42 ...
 personal (stopped): fetched=12 ...
 ```
+
+`vanished=N` is the one counter appended conditionally. It appears after
+`quarantined=` only in the runs where a message disappeared mid-cycle, and is
+omitted everywhere else, so the published field list is unchanged for every
+other run. Under `--json` it is `summary.vanished`, likewise omitted when zero
+— parse it as `.summary.vanished // 0` if you want to alert on it.
 
 A steady-state cron run looks like `fetched=0`. A re-run over the same window
 looks like `matched=N stored=0 skipped=N` — that is idempotency working.
