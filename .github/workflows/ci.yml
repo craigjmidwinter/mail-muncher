@@ -70,7 +70,7 @@ jobs:
           cache: true
 
       - name: Validate release config
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: check
@@ -78,7 +78,7 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ""
 
       - name: Build a snapshot release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --snapshot --clean --skip=publish,sign,announce

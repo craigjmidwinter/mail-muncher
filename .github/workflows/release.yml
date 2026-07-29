@@ -68,7 +68,7 @@ jobs:
           echo "::warning title=Homebrew tap skipped::HOMEBREW_TAP_GITHUB_TOKEN is not set; craigjmidwinter/homebrew-tap was not updated."
 
       - name: Run goreleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: >-
