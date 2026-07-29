@@ -67,6 +67,10 @@ type FetchOptions struct {
 	// stored LastSyncTime). Zero means "no bound", i.e. the whole mailbox.
 	// Callers normally pass config.GmailConfig.InitialLookbackDuration.
 	InitialLookback time.Duration
+	// IncludeSpamTrash is the account's `gmail.include_spam_trash`. The zero
+	// value — exclude — is the default, and both sync routes honour it: see
+	// listIDs for the full scan and excludedBySpamTrash for the history path.
+	IncludeSpamTrash bool
 	// Concurrency is the size of the RAW-download worker pool. Zero means
 	// DefaultConcurrency.
 	Concurrency int
@@ -117,15 +121,17 @@ func NewFromAccount(ctx context.Context, account *config.Account) (*Provider, er
 }
 
 // FetchOptionsFromAccount reads the fetch-shaping keys (`gmail.query`,
-// `gmail.initial_lookback`) off a config account. A nil account, or one with no
-// `gmail:` section, yields the zero FetchOptions.
+// `gmail.initial_lookback`, `gmail.include_spam_trash`) off a config account. A
+// nil account, or one with no `gmail:` section, yields the zero FetchOptions —
+// which excludes Spam and Trash, the same as an account that omits the key.
 func FetchOptionsFromAccount(account *config.Account) FetchOptions {
 	if account == nil || account.Gmail == nil {
 		return FetchOptions{}
 	}
 	return FetchOptions{
-		Query:           account.Gmail.Query,
-		InitialLookback: account.Gmail.InitialLookbackDuration(),
+		Query:            account.Gmail.Query,
+		InitialLookback:  account.Gmail.InitialLookbackDuration(),
+		IncludeSpamTrash: account.Gmail.IncludesSpamTrash(),
 	}
 }
 
@@ -192,6 +198,11 @@ func (p *Provider) Account() string { return p.account }
 // engine is the authority on what gets kept. A scan that recovers from an
 // expired cursor therefore drops the query too, so it enumerates the same
 // population the incremental path would have; see fullScan for the argument.
+//
+// Note on Spam and Trash: `gmail.include_spam_trash` (default false) is honoured
+// by both routes, by different means — a server-side flag on the full scan, a
+// post-download label check on the incremental one — precisely so the two agree
+// on which messages exist. See listIDs and excludedBySpamTrash.
 //
 // Note on the two watermarks: both HistoryID and LastSyncTime are sampled
 // *before* the run lists anything, so they describe the same instant. The pair

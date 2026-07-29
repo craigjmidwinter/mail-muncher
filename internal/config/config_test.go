@@ -46,6 +46,7 @@ accounts:
       token_file: /etc/mm/token.json
       query: "-in:chats"
       initial_lookback: 168h
+      include_spam_trash: true
   - name: work
     gmail:
       credentials_file: /etc/mm/work-credentials.json
@@ -82,6 +83,7 @@ rules:
 	require.Equal(t, "-in:chats", personal.Gmail.Query)
 	require.Equal(t, "168h", personal.Gmail.InitialLookback)
 	require.Equal(t, 168*time.Hour, personal.Gmail.InitialLookbackDuration())
+	require.True(t, personal.Gmail.IncludesSpamTrash())
 
 	// Omitted keys get their documented defaults.
 	work := cfg.Account("work")
@@ -89,6 +91,8 @@ rules:
 	require.Equal(t, ProviderGmail, work.Provider, "provider defaults to gmail")
 	require.Equal(t, DefaultInitialLookback, work.Gmail.InitialLookback)
 	require.Equal(t, 720*time.Hour, work.Gmail.InitialLookbackDuration())
+	require.False(t, work.Gmail.IncludesSpamTrash(), "include_spam_trash defaults to false")
+	require.False(t, (*GmailConfig)(nil).IncludesSpamTrash(), "and the accessor is nil-safe")
 
 	require.Nil(t, cfg.Account("nope"))
 
@@ -426,6 +430,28 @@ rules:
 
 	// The accessor still yields the default rather than a zero duration.
 	require.Equal(t, 720*time.Hour, cfg.Accounts[0].Gmail.InitialLookbackDuration())
+}
+
+// Opting into Spam and Trash is legal, but it is worth a word: the mail it
+// admits is read by an AI agent, and Spam is where hostile text lives.
+func TestValidateIncludeSpamTrashWarnsOnOptIn(t *testing.T) {
+	cfg := loadForValidation(t, `
+accounts:
+  - name: quiet
+    gmail: {credentials_file: /a, token_file: /b}
+  - name: loud
+    gmail: {credentials_file: /a, token_file: /b, include_spam_trash: true}
+rules:
+  - name: r
+    match: {has_attachment: true}
+    dest: /one
+`)
+
+	ps := Validate(cfg)
+	require.False(t, hasProblem(ps, SeverityWarning, "accounts[0].gmail.include_spam_trash"),
+		"the default is silent")
+	require.True(t, hasProblem(ps, SeverityWarning, "accounts[1].gmail.include_spam_trash"))
+	require.False(t, ps.HasErrors(), "it is a warning, not an error: the config is usable")
 }
 
 func TestValidateMissingDomainsFileIsAWarningNotAnError(t *testing.T) {

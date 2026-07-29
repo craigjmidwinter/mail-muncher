@@ -11,6 +11,9 @@ accounts:
     gmail:
       credentials_file: ~/.config/mail-muncher/credentials.json
       token_file: ~/.config/mail-muncher/token.json
+      # `include_spam_trash` is omitted, so it defaults to false: mail in Spam
+      # and Trash is not fetched at all and never reaches your rules. See
+      # docs/configuration.md#include_spam_trash before turning it on.
 
 rules:
   - name: receipts

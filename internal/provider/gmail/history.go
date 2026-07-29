@@ -33,15 +33,20 @@ var ErrHistoryExpired = errors.New("gmail: history id expired")
 // forever.
 //
 // Gmail does not filter history by the account's `q`, and does not hide Spam or
-// Trash from it either; that is by design here. The server query is an
-// optimization for the first-ever scan only, and the local filter engine remains
-// the authority on what is kept.
+// Trash from it either. The server query is an optimization for the first-ever
+// scan only, and the local filter engine remains the authority on what is kept.
 //
 // The full-scan path is matched to this population deliberately — it drops the
-// account query on a recovery scan and always passes includeSpamTrash — because
-// a recovery scan stands in for this one. Any message this route would deliver
-// but that route would not is a message lost for good once the recovery installs
-// a fresh cursor. See scanQuery and listIDs.
+// account query on a recovery scan — because a recovery scan stands in for this
+// one. Any message this route would deliver but that route would not is a
+// message lost for good once the recovery installs a fresh cursor. See
+// scanQuery and listIDs.
+//
+// Spam and Trash are the one place the two routes cannot be matched at the API:
+// there is no includeSpamTrash on this endpoint. `gmail.include_spam_trash` is
+// therefore applied to this route *after* the download, once labels are known —
+// see excludedBySpamTrash — so the ids that survive are the same ids a full scan
+// with the same setting would have listed.
 //
 // Only ids come back from here. The bodies — and with them the `threadId` —
 // are fetched by the same download/getRaw path a full scan uses, so the

@@ -53,6 +53,44 @@ func (p *Provider) loadLabels(ctx context.Context) error {
 	return nil
 }
 
+// LabelSpam and LabelTrash are Gmail's system labels for the two folders
+// `gmail.include_spam_trash` governs. Gmail gives system labels the same string
+// for id and name, so these match whether or not the label cache resolved them.
+const (
+	LabelSpam  = "SPAM"
+	LabelTrash = "TRASH"
+)
+
+// excludedBySpamTrash reports whether a downloaded message must be dropped
+// because it lives in Spam or Trash and the account did not opt into those.
+//
+// This is the incremental route's half of `gmail.include_spam_trash`.
+// users.history.list has no includeSpamTrash parameter — it reports everything
+// added anywhere in the mailbox — so the only place the two routes can be made
+// to agree is after the download, once labels are known. The full scan gets the
+// same treatment even though its server-side filter has already done the work:
+// running one predicate on both routes is what makes "identical population" a
+// property of the code rather than of a comment.
+//
+// It reads the *resolved* names on the RawMessage rather than the raw label ids,
+// so it is exactly the test a user would write as a rule (`not: {label: SPAM}`).
+// The two mechanisms are deliberately the same test at two different stages.
+//
+// A message dropped here is not an error and not a parse failure: it was never
+// delivered, so nothing downstream ever sees it. It is also deliberately *not*
+// added to the seen-set — see download.
+func (p *Provider) excludedBySpamTrash(msg provider.RawMessage) bool {
+	if p.opts.IncludeSpamTrash {
+		return false
+	}
+	for _, name := range msg.Labels {
+		if name == LabelSpam || name == LabelTrash {
+			return true
+		}
+	}
+	return false
+}
+
 // labelNames resolves label ids to names, preserving order. An id with no known
 // name (a label created after the cache was filled) passes through unchanged —
 // a slightly ugly name beats losing the label.

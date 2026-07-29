@@ -124,7 +124,8 @@ func TestExpiredHistoryIDFallsBackToFullScanInTheSameRun(t *testing.T) {
 			fmt.Sprintf("after:%d", lastSync.Add(-RecoveryOverlap).Unix()),
 			s.listQueries[0])
 		require.NotContains(t, s.listQueries[0], "jobs@example.com")
-		require.Equal(t, []string{"true", "true"}, s.listSpamTrash)
+		require.Equal(t, []string{"false", "false"}, s.listSpamTrash,
+			"gmail.include_spam_trash defaults to false, and a recovery scan is not an exception to it")
 		require.Equal(t, 1, s.profileCalls)
 	})
 	require.Equal(t, []string{"m1", "m2", "m3"}, got.ids())

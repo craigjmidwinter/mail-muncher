@@ -207,6 +207,12 @@ mail-muncher run               # do it for real
 The first run is a full scan bounded by `initial_lookback`, so it is the
 slowest one. Every run after it uses Gmail's history API and is cheap.
 
+Mail in Spam and Trash is not fetched: `gmail.include_spam_trash` defaults to
+`false`, so those messages never reach your rules and never reach an AI agent's
+context window. If something you wanted is missing from the first pull, check
+Gmail's Spam folder before anything else — see
+[configuration.md](configuration.md#include_spam_trash) for the opt-in.
+
 ---
 
 ## Troubleshooting
@@ -319,9 +325,16 @@ and jitter — five attempts, 500ms base, capped at 30 seconds. A *daily quota
 exhausted* 403 is deliberately not retried, because retrying inside one run
 cannot help; wait for the quota window to reset.
 
-If you are hitting limits routinely, narrow `gmail.query` so full scans ask for
-less, and make sure the state file is not being deleted between runs (which
+If you are hitting limits routinely, narrow `gmail.query` so the first scan asks
+for less, and make sure the state file is not being deleted between runs (which
 forces a full scan every time).
+
+One quota note specific to Spam and Trash: at the default
+`gmail.include_spam_trash: false`, full scans never list them, but incremental
+cycles still spend one `messages.get` per Spam message to find out that it is
+Spam and discard it. The Gmail history API has no way to filter them server-side,
+so that call is the price of both sync paths agreeing on which mail exists. It is
+a handful of reads a day on a normal mailbox.
 
 ## Rotating or revoking access
 

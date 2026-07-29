@@ -164,6 +164,20 @@ func (s *gmailStub) addMailboxMessage(id string, received time.Time, spamOrTrash
 	if spamOrTrash {
 		labels = []string{"SPAM"}
 	}
+	s.addMailboxMessageLabeled(id, received, labels, matchesQuery)
+}
+
+// addMailboxMessageLabeled is addMailboxMessage for tests that care *which*
+// folder a message is in. Whether messages.list hides it follows from the
+// labels, exactly as it does at Gmail: SPAM and TRASH are the two the
+// includeSpamTrash parameter governs.
+func (s *gmailStub) addMailboxMessageLabeled(id string, received time.Time, labels []string, matchesQuery bool) {
+	spamOrTrash := false
+	for _, l := range labels {
+		if l == "SPAM" || l == "TRASH" {
+			spamOrTrash = true
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mailbox = append(s.mailbox, mailboxEntry{
@@ -468,11 +482,16 @@ func TestFetchOptionsFromAccount(t *testing.T) {
 	opts := FetchOptionsFromAccount(acct)
 	require.Equal(t, "from:jobs@example.com", opts.Query)
 	require.Equal(t, 48*time.Hour, opts.InitialLookback)
+	require.False(t, opts.IncludeSpamTrash, "omitting include_spam_trash excludes them")
+
+	acct.Gmail.IncludeSpamTrash = true
+	require.True(t, FetchOptionsFromAccount(acct).IncludeSpamTrash)
 
 	// Omitted initial_lookback falls back to the config default (30 days).
 	acct.Gmail.InitialLookback = ""
 	require.Equal(t, 720*time.Hour, FetchOptionsFromAccount(acct).InitialLookback)
 
+	// The zero FetchOptions is the safe default too: no account, no Spam.
 	require.Equal(t, FetchOptions{}, FetchOptionsFromAccount(nil))
 	require.Equal(t, FetchOptions{}, FetchOptionsFromAccount(&config.Account{Name: "x"}))
 }

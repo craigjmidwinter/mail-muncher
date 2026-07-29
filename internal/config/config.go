@@ -176,13 +176,36 @@ type GmailConfig struct {
 	CredentialsFile string `yaml:"credentials_file"`
 	// TokenFile is where the OAuth token is cached; written by `auth`.
 	TokenFile string `yaml:"token_file"`
-	// Query is an optional Gmail server-side pre-filter, applied to full
-	// scans only (incremental history results are not query-filtered).
+	// Query is an optional Gmail server-side pre-filter, applied to the
+	// first-ever full scan only (incremental history results are not
+	// query-filtered, and a recovery scan drops the query deliberately).
 	Query string `yaml:"query"`
 	// InitialLookback is a Go duration string bounding how far back the
 	// first-ever full scan reaches. Load defaults it to
 	// DefaultInitialLookback; use InitialLookbackDuration to parse it.
 	InitialLookback string `yaml:"initial_lookback"`
+	// IncludeSpamTrash opts the account into fetching mail that Gmail filed
+	// under Spam or Trash. It defaults to false, and the default is a safety
+	// decision rather than a tidiness one: mail-muncher exists to put mail in
+	// front of an AI agent, so everything it delivers ends up inside an LLM's
+	// context window, and Spam is by definition the highest-density source of
+	// hostile, attacker-authored text in a mailbox. Prompt injection arrives by
+	// email like everything else. Excluding it by default keeps the obvious
+	// attack surface out of the pipeline unless the operator asks for it.
+	//
+	// It is honoured identically by both sync routes — see the gmail provider —
+	// so turning it on or off never makes the two disagree about which messages
+	// exist. Read it through IncludesSpamTrash.
+	IncludeSpamTrash bool `yaml:"include_spam_trash"`
+}
+
+// IncludesSpamTrash is the effective `gmail.include_spam_trash`: false (the
+// default) unless the account opted in.
+//
+// It is the accessor every consumer must use, so a GmailConfig built in code
+// behaves exactly like one Load defaulted.
+func (g *GmailConfig) IncludesSpamTrash() bool {
+	return g != nil && g.IncludeSpamTrash
 }
 
 // InitialLookbackDuration parses InitialLookback, falling back to

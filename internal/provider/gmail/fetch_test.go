@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 	"github.com/stretchr/testify/require"
+	gmailapi "google.golang.org/api/gmail/v1"
 )
 
 var fixedNow = time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
@@ -675,66 +677,168 @@ func TestClockJumpDoesNotLoseTheMessage(t *testing.T) {
 // population consistency (BUG 2)
 // ---------------------------------------------------------------------------
 
+// spamTrashMailbox is the fixture both population tests share: one message of
+// each interesting kind — inside the account query, outside it, in Spam, in
+// Trash — all arriving in the same window.
+var spamTrashMailbox = []string{"matches-query", "outside-query", "in-spam", "in-trash"}
+
+func populateSpamTrashMailbox(s *gmailStub, arrived time.Time) {
+	s.addMailboxMessageLabeled("matches-query", arrived, []string{"INBOX"}, true)
+	s.addMailboxMessageLabeled("outside-query", arrived, []string{"INBOX"}, false)
+	s.addMailboxMessageLabeled("in-spam", arrived, []string{"SPAM"}, true)
+	s.addMailboxMessageLabeled("in-trash", arrived, []string{"TRASH"}, false)
+}
+
 // TestRecoveryScanCoversSamePopulationAsHistory is the invariant behind BUG 2:
 // a full scan that replaces an expired cursor must enumerate what the
-// incremental path would have. users.history.list is neither query-filtered nor
-// Spam/Trash-filtered, so the fallback must not be either — anything the
-// fallback misses is missed for good, because it installs a fresh cursor.
+// incremental path would have. Anything the fallback misses is missed for good,
+// because the fallback installs a fresh cursor on the way out.
+//
+// The two routes reach that agreement by different means and the test is written
+// to be indifferent to which: users.history.list is neither query-filtered nor
+// Spam/Trash-filtered, so the fallback drops the account query, matches the
+// includeSpamTrash parameter to `gmail.include_spam_trash`, and the incremental
+// route applies the same setting after the download. Whichever way the setting
+// points, the *delivered id sets must be identical* — that equality is the
+// property, and it is asserted in both modes.
 func TestRecoveryScanCoversSamePopulationAsHistory(t *testing.T) {
 	lastSync := fixedNow.Add(-2 * time.Hour)
 	arrived := fixedNow.Add(-time.Hour)
-
-	// One of each interesting kind: inside the account query, outside it, in
-	// Spam, in Trash.
-	populate := func(s *gmailStub) {
-		s.addMailboxMessage("matches-query", arrived, false, true)
-		s.addMailboxMessage("outside-query", arrived, false, false)
-		s.addMailboxMessage("in-spam", arrived, true, true)
-		s.addMailboxMessage("in-trash", arrived, true, false)
-	}
-	opts := FetchOptions{Query: "from:jobs@example.com", InitialLookback: 720 * time.Hour, Now: at(fixedNow)}
 	state := provider.SyncState{HistoryID: 4242, LastSyncTime: lastSync}
 
-	// Incremental: history reports every arrival, whatever label it carries.
-	historyStub := newGmailStub()
-	populate(historyStub)
-	historyStub.addHistoryPage("", "", 4300, 4300, "matches-query", "outside-query", "in-spam", "in-trash")
-	var viaHistory collector
-	_, err := newTestProvider(t, historyStub, opts).Fetch(context.Background(), state, viaHistory.fn)
-	require.NoError(t, err)
-	require.Len(t, viaHistory.ids(), 4, "sanity: the incremental path delivers all four")
+	tests := []struct {
+		name             string
+		includeSpamTrash bool
+		want             []string
+		wantSpamTrash    string
+	}{
+		{
+			name:          "excluded by default",
+			want:          []string{"matches-query", "outside-query"},
+			wantSpamTrash: "false",
+		},
+		{
+			name:             "included on opt-in",
+			includeSpamTrash: true,
+			want:             []string{"in-spam", "in-trash", "matches-query", "outside-query"},
+			wantSpamTrash:    "true",
+		},
+	}
 
-	// Recovery: the same cursor, now expired.
-	recoveryStub := newGmailStub()
-	populate(recoveryStub)
-	recoveryStub.historyStatus = http.StatusNotFound
-	var viaRecovery collector
-	_, err = newTestProvider(t, recoveryStub, opts).Fetch(context.Background(), state, viaRecovery.fn)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := FetchOptions{
+				Query:            "from:jobs@example.com",
+				InitialLookback:  720 * time.Hour,
+				IncludeSpamTrash: tc.includeSpamTrash,
+				Now:              at(fixedNow),
+			}
 
-	require.Equal(t, viaHistory.ids(), viaRecovery.ids(),
-		"the fallback scan and the incremental path must cover the same mailbox")
-	recoveryStub.snapshot(func(s *gmailStub) {
-		require.Equal(t, []string{"true"}, s.listSpamTrash,
-			"messages.list hides Spam and Trash by default; history does not, so the scan must ask for them")
-		require.NotContains(t, s.listQueries[0], "jobs@example.com",
-			"the account query is a cost bound for the first run, not a filter on recovery")
-	})
+			// Incremental: history reports every arrival, whatever label it
+			// carries, so the setting has to be applied on this side by hand.
+			historyStub := newGmailStub()
+			populateSpamTrashMailbox(historyStub, arrived)
+			historyStub.addHistoryPage("", "", 4300, 4300, spamTrashMailbox...)
+			var viaHistory collector
+			historyState, err := newTestProvider(t, historyStub, opts).Fetch(context.Background(), state, viaHistory.fn)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, viaHistory.ids())
+
+			// Recovery: the same cursor, now expired.
+			recoveryStub := newGmailStub()
+			populateSpamTrashMailbox(recoveryStub, arrived)
+			recoveryStub.historyStatus = http.StatusNotFound
+			var viaRecovery collector
+			recoveryState, err := newTestProvider(t, recoveryStub, opts).Fetch(context.Background(), state, viaRecovery.fn)
+			require.NoError(t, err)
+
+			require.Equal(t, viaHistory.ids(), viaRecovery.ids(),
+				"the fallback scan and the incremental path must cover the same mailbox")
+			require.ElementsMatch(t, historyState.SeenIDs, recoveryState.SeenIDs,
+				"and must agree on what was delivered, so a later run cannot diverge either")
+
+			recoveryStub.snapshot(func(s *gmailStub) {
+				require.Equal(t, []string{tc.wantSpamTrash}, s.listSpamTrash,
+					"the full scan's includeSpamTrash is the account setting, nothing else")
+				require.NotContains(t, s.listQueries[0], "jobs@example.com",
+					"the account query is a cost bound for the first run, not a filter on recovery")
+			})
+		})
+	}
 }
 
-// TestFullScanAlwaysIncludesSpamTrash: the flag is not conditional on which kind
-// of scan this is, because the population has to match history on every route.
-func TestFullScanAlwaysIncludesSpamTrash(t *testing.T) {
+// TestFullScanSpamTrashFlagFollowsConfig: the flag is not conditional on which
+// kind of scan this is — first-ever or recovery — because the population has to
+// match history on every route. It is conditional on one thing only.
+func TestFullScanSpamTrashFlagFollowsConfig(t *testing.T) {
+	for _, include := range []bool{false, true} {
+		t.Run(fmt.Sprintf("include=%v", include), func(t *testing.T) {
+			stub := newGmailStub()
+			stub.addListPage("", "page-2", "m1")
+			stub.addListPage("page-2", "", "m2")
+
+			p := newTestProvider(t, stub, FetchOptions{IncludeSpamTrash: include, Now: at(fixedNow)})
+			var got collector
+			_, err := p.Fetch(context.Background(), provider.SyncState{}, got.fn)
+			require.NoError(t, err)
+			want := strconv.FormatBool(include)
+			stub.snapshot(func(s *gmailStub) {
+				require.Equal(t, []string{want, want}, s.listSpamTrash, "every page asks the same question")
+			})
+		})
+	}
+}
+
+// TestFullScanAlsoDropsSpamItWasHandedAnyway: the same predicate runs on the
+// full-scan route, so a message that Gmail listed and then filed into Spam
+// before the download — the race between messages.list and messages.get — is
+// still not delivered. One predicate on both routes is what makes the agreement
+// structural rather than incidental.
+func TestFullScanAlsoDropsSpamItWasHandedAnyway(t *testing.T) {
 	stub := newGmailStub()
-	stub.addListPage("", "page-2", "m1")
-	stub.addListPage("page-2", "", "m2")
+	stub.addListPage("", "", "keep", "moved-to-spam")
+	stub.addMessage("moved-to-spam", fixedNow, []string{"SPAM"}, []byte("Subject: late spam\r\n\r\nnope\r\n"))
 
 	p := newTestProvider(t, stub, FetchOptions{Now: at(fixedNow)})
 	var got collector
-	_, err := p.Fetch(context.Background(), provider.SyncState{}, got.fn)
+	state, err := p.Fetch(context.Background(), provider.SyncState{}, got.fn)
 	require.NoError(t, err)
+	require.Equal(t, []string{"keep"}, got.ids())
+	require.Equal(t, []string{"keep"}, state.SeenIDs)
+}
+
+// TestIncrementalExclusionLeavesTheCursorAlone: dropping a message for living in
+// Spam is not a failure and not a parse error, so it must not hold the sync
+// cursor back — and the drop must not be re-decided forever either.
+func TestIncrementalExclusionLeavesTheCursorAlone(t *testing.T) {
+	stub := newGmailStub()
+	stub.addMessage("spam-1", fixedNow, []string{"SPAM"}, []byte("Subject: buy\r\n\r\nnope\r\n"))
+	stub.addMessage("trash-1", fixedNow, []string{"TRASH"}, []byte("Subject: bin\r\n\r\nnope\r\n"))
+	stub.addHistoryPage("", "", 5100, 5100, "spam-1", "trash-1")
+
+	p := newTestProvider(t, stub, FetchOptions{Now: at(fixedNow)})
+	var got collector
+	state, err := p.Fetch(context.Background(), provider.SyncState{HistoryID: 5000}, got.fn)
+	require.NoError(t, err, "an excluded message is not an error")
+
+	require.Empty(t, got.msgs, "nothing reached the pipeline")
+	require.Equal(t, uint64(5100), state.HistoryID, "the cursor advances past mail we chose not to deliver")
+	require.Equal(t, fixedNow, state.LastSyncTime)
+	require.Empty(t, state.SeenIDs,
+		"excluded ids stay out of the seen-set, so it records deliveries and both routes agree on it")
+
+	// The next run starts from the advanced cursor, which is what stops the
+	// exclusion repeating: the ids are simply not in that history window.
 	stub.snapshot(func(s *gmailStub) {
-		require.Equal(t, []string{"true", "true"}, s.listSpamTrash, "every page asks for spam and trash")
+		s.historyPages = map[string]*gmailapi.ListHistoryResponse{"": {HistoryId: 5100}}
+		s.getIDs = nil
+	})
+	next, err := p.Fetch(context.Background(), state, got.fn)
+	require.NoError(t, err)
+	require.Equal(t, uint64(5100), next.HistoryID, "and does not rewind")
+	stub.snapshot(func(s *gmailStub) {
+		require.Empty(t, s.getIDs, "no re-download, so the exclusion cannot loop")
+		require.Equal(t, []uint64{5000, 5100}, s.historyStarts, "the second run asked from the advanced cursor")
 	})
 }
 

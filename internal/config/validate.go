@@ -214,6 +214,14 @@ func validateGmail(g *GmailConfig, field string, add addFunc) {
 	case d <= 0:
 		add(SeverityError, field+".initial_lookback", "must be positive, got %q", g.InitialLookback)
 	}
+
+	// Opting in is legitimate — recovering a misfiled message is the usual
+	// reason — but it is worth saying out loud, because the mail it admits is
+	// read by an AI agent and Spam is where the hostile text lives.
+	if g.IncludesSpamTrash() {
+		add(SeverityWarning, field+".include_spam_trash",
+			"true feeds Spam and Trash to your rules, and anything they match reaches an AI agent's context window; exclude it again with a rule on the SPAM and TRASH labels if you only wanted Trash")
+	}
 }
 
 // validateRules checks the rules block against the known account names.

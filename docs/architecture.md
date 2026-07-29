@@ -283,14 +283,37 @@ Narrowing the query is therefore only ever a way to make one first run cheaper.
 It cannot bound steady-state behavior, and a query that excludes something your
 rules would keep makes the two scan modes inconsistent for no benefit.
 
-**Full scans include Spam and Trash.** `users.messages.list` sets
-`IncludeSpamTrash(true)` unconditionally. This is not an oversight: the history
-path has no such parameter and has always reported everything added anywhere in
-the mailbox, so a full scan that excluded Spam and Trash would archive a
-different set of mail than an incremental cycle over the same window. Matching
-them is what makes the two paths interchangeable — which the expired-cursor
-fallback requires. Excluding Spam and Trash is a rule (`not: {label: SPAM}`),
-because rules are the only authority on what is kept.
+<a id="the-two-sync-paths-must-agree"></a>
+
+**Spam and Trash are excluded by default, on both paths.**
+`gmail.include_spam_trash` defaults to `false`, and the default is a security
+decision: delivered mail ends up in an LLM's context window, and Spam is the
+highest-density source of hostile, attacker-authored text a mailbox contains.
+
+The interesting part is not the default but the invariant underneath it. The
+history path has no `includeSpamTrash` parameter and reports everything added
+anywhere in the mailbox, so whichever way the setting points, the two paths must
+be made to point the same way — a full scan that enumerated a different
+population than an incremental cycle over the same window would lose mail
+silently, because the expired-cursor fallback installs a fresh cursor on the way
+out and never revisits what it skipped. So:
+
+- The full scan passes the setting straight to `IncludeSpamTrash`, on first-ever
+  and recovery scans alike.
+- The incremental path cannot ask the server, so it downloads and then drops
+  messages carrying `SPAM` or `TRASH` before they reach the pipeline — one
+  `messages.get` spent to learn what a message is and then discard it. The same
+  predicate also runs on the full-scan path, where it is normally a no-op; one
+  predicate on both routes is what makes the agreement structural.
+
+A dropped message is not an error and not a parse failure. It is not marked
+seen, either: the seen-set records deliveries, and leaving excluded ids out of it
+is what keeps the two paths' persisted state identical. Nothing loops as a
+result — the history cursor advances past a message whatever we decide about it,
+and a later full scan excludes it server-side.
+
+Once fetched, rules remain the only authority on what is kept: with the key on,
+`not: {label: SPAM}` is how you take one folder and not the other.
 
 **Recovery scans overlap the watermark by 24 hours.** `RecoveryOverlap` is
 subtracted from the stored `LastSyncTime` before it becomes the `after:` bound,

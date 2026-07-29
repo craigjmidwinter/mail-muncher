@@ -346,6 +346,49 @@ looks like `Label_17` — a cosmetic edge case, not a correctness one.
 error: rules[0].match: label: must not be empty
 ```
 
+#### The `SPAM` and `TRASH` labels
+
+These two are special, because Gmail's Spam and Trash folders are not fetched at
+all by default. `gmail.include_spam_trash` is `false` unless you set it, and
+while it is `false` no message carrying `SPAM` or `TRASH` ever reaches the filter
+engine — so a rule matching those labels matches nothing, and a `not: {label:
+SPAM}` guard is redundant. That is the intended state for almost everyone:
+delivered mail is read by an AI agent, and Spam is where the hostile,
+attacker-authored text lives.
+
+The two mechanisms divide the work cleanly:
+
+| | what it decides | when |
+| --- | --- | --- |
+| `gmail.include_spam_trash` | whether Spam/Trash mail is **fetched at all** | before rules run, on both sync paths |
+| `label: SPAM` / `label: TRASH` in a rule | what happens to it **once fetched** | only when the key is `true` |
+
+So the rule form is still exactly right, and still useful — it is how you take
+one of the two folders and not the other, or route recovered mail somewhere
+separate:
+
+```yaml
+accounts:
+  - name: personal
+    gmail:
+      include_spam_trash: true   # fetch both folders
+rules:
+  - name: recovered-from-trash
+    match:
+      all:
+        - label: TRASH
+        - from_domains: [important-vendor.com]
+    dest: ~/Mail/recovered
+  - name: everything-else-but-spam
+    match:
+      not:
+        label: SPAM
+    dest: ~/Mail/archive
+```
+
+Left at the default, drop the key and drop the guard. See
+[configuration.md](configuration.md#include_spam_trash).
+
 ### `older_than` / `newer_than`
 
 ```yaml
@@ -543,10 +586,14 @@ must be last, since it claims anything the rules above did not.
 - name: archive-all
   match:
     not:
-      label: SPAM
+      label: DRAFT
   dest: ~/Mail/archive
   formats: [eml]
 ```
+
+There is no `not: {label: SPAM}` here on purpose: at the default
+`gmail.include_spam_trash: false` nothing carrying `SPAM` is fetched, so the
+guard would be dead weight. Add it back if — and only if — you turn the key on.
 
 Be deliberate: this archives your entire mailbox on the schedule you run. Check
 what it will do with `run --dry-run` first.

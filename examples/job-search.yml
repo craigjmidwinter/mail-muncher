@@ -41,17 +41,32 @@ accounts:
       token_file: ~/.config/mail-muncher/token.json
 
       # Optional Gmail server-side pre-filter. It is a cost optimization for
-      # full scans only: incremental (history API) results are NOT filtered by
-      # it, and mail-muncher deliberately does not re-apply it locally. The
-      # rules below remain the only authority on what gets archived, so keep
-      # this broad or leave it out entirely.
-      query: "-in:chats -in:spam"
+      # the FIRST-EVER scan only: incremental (history API) results are not
+      # filtered by it, a recovery scan after an expired cursor drops it, and
+      # mail-muncher deliberately does not re-apply it locally. The rules below
+      # remain the only authority on what gets archived, so keep this broad or
+      # leave it out entirely.
+      #
+      # `-in:spam` does NOT belong here — it would bound exactly one cycle in
+      # the life of this account. Spam and Trash have their own key, below.
+      query: "-in:chats"
 
       # How far back the first-ever scan reaches, as a Go duration. 2160h is
       # 90 days: job-search mail is recent, and this keeps the first run from
       # trawling a decade of mailbox. Ignored on every later run, which resume
       # from the stored cursor. Default when omitted: 720h (30 days).
       initial_lookback: 2160h
+
+      # Whether mail Gmail filed under Spam or Trash is fetched at all. Default
+      # when omitted: false, which is what this account wants and why the line
+      # is commented out. Delivered mail is read by an AI agent, and Spam is
+      # the one folder whose contents are hostile by construction, so the safe
+      # setting is the one you get by saying nothing. Both sync paths honour
+      # it, so turning it on or off never makes them disagree.
+      #
+      # Turn it on only to recover something Gmail misfiled, and put the
+      # discrimination in a rule (`not: {label: SPAM}`) once it is on.
+      # include_spam_trash: false
 
 # Rules are evaluated in config order against every fetched message, and the
 # FIRST match wins — a message is written by exactly one rule, or by none.

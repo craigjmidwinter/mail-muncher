@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 	"github.com/stretchr/testify/require"
 	gmailapi "google.golang.org/api/gmail/v1"
 )
@@ -44,6 +45,37 @@ func TestLabelNamesResolvesIDsInOrder(t *testing.T) {
 	require.Nil(t, p.labelNames(nil))
 	require.Equal(t, []string{"Label_999"}, p.labelNames([]string{"Label_999"}),
 		"an unknown id passes through rather than being dropped")
+}
+
+func TestExcludedBySpamTrash(t *testing.T) {
+	tests := []struct {
+		name    string
+		labels  []string
+		want    bool
+		wantOpt bool // with include_spam_trash: true
+	}{
+		{name: "inbox", labels: []string{"INBOX", "UNREAD"}},
+		{name: "spam", labels: []string{"SPAM"}, want: true},
+		{name: "trash", labels: []string{"TRASH"}, want: true},
+		{name: "spam among others", labels: []string{"INBOX", "CATEGORY_PROMOTIONS", "SPAM"}, want: true},
+		{name: "no labels", labels: nil},
+		// A user label is matched on its resolved name, and Gmail's system
+		// labels are exact and upper case, so a folder called "Spam" is a
+		// different thing and stays.
+		{name: "user label named Spam", labels: []string{"Spam"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := provider.RawMessage{ID: "m1", Labels: tc.labels}
+
+			excluding := newTestProvider(t, newGmailStub(), FetchOptions{})
+			require.Equal(t, tc.want, excluding.excludedBySpamTrash(msg))
+
+			including := newTestProvider(t, newGmailStub(), FetchOptions{IncludeSpamTrash: true})
+			require.Equal(t, tc.wantOpt, including.excludedBySpamTrash(msg),
+				"include_spam_trash: true excludes nothing at all")
+		})
+	}
 }
 
 func TestLoadLabelsIsCached(t *testing.T) {

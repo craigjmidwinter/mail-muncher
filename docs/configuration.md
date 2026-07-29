@@ -67,6 +67,7 @@ accounts:
       token_file: ~/.config/mail-muncher/token.json
       query: "-in:chats"
       initial_lookback: 2160h
+      include_spam_trash: false
 
 rules:
   - name: job-search
@@ -248,10 +249,84 @@ what it does and does not do before using it:
 
 The consequence: a message excluded by `query` may still be archived if it
 arrives during an incremental cycle. **Your rules are the only authority on
-what gets stored.** Keep the query broad — `-in:chats -in:spam` is a reasonable
-ceiling — or omit it entirely. A narrow query does not make your archive
-smaller; it makes your first scan cheaper and your behavior inconsistent
-between scan modes.
+what gets stored.** Keep the query broad — `-in:chats` is a reasonable ceiling —
+or omit it entirely. A narrow query does not make your archive smaller; it
+makes your first scan cheaper and your behavior inconsistent between scan modes.
+
+Do **not** reach for `-in:spam` here. It never worked as a spam filter: it is
+absent from incremental cycles, and it is dropped from recovery scans too, so it
+bounded exactly one cycle in the life of an account. Spam and Trash have their
+own key, which every cycle honours — see
+[`include_spam_trash`](#include_spam_trash) below.
+
+### `include_spam_trash`
+
+- **Type:** boolean
+- **Default:** `false` — Spam and Trash are **not** fetched.
+
+```yaml
+accounts:
+  - name: personal
+    gmail:
+      credentials_file: ~/.config/mail-muncher/credentials.json
+      token_file: ~/.config/mail-muncher/token.json
+      include_spam_trash: true   # only if you mean it
+```
+
+With the default, a message living in Spam or Trash is never fetched, never
+evaluated against your rules, and never written. With `true`, those messages are
+fetched like any other and your rules decide, exactly as they do for the rest of
+the mailbox.
+
+**Why the default is `false`.** mail-muncher exists to put mail in front of an
+AI agent, so everything it delivers ends up inside an LLM's context window. Spam
+is, by construction, the single highest-density source of hostile,
+attacker-authored text in a mailbox — prompt injection arrives by email like
+everything else. Keeping it out by default is a security decision, not a
+tidiness one. It is also why the key is a boolean rather than something
+cleverer: the safe setting should be the one you get by saying nothing.
+
+**Both sync paths honour it identically**, which is the point of it being a
+config key rather than a rule:
+
+| | full scan (`users.messages.list`) | incremental (`users.history.list`) |
+|---|---|---|
+| `false` (default) | `includeSpamTrash=false`; Gmail never lists them | listed by Gmail regardless, then dropped after download once labels are known |
+| `true` | `includeSpamTrash=true` | delivered |
+
+The history API has no `includeSpamTrash` parameter, so the incremental path
+pays one `messages.get` per excluded message to find out what it is, then throws
+it away. That cost buys the invariant: a first scan, a steady-state cycle and a
+recovery scan after an expired cursor all deliver the same set of messages. When
+they disagree, mail is lost silently — see
+[architecture.md](architecture.md#the-two-sync-paths-must-agree).
+
+Excluded messages are not errors and not parse failures. They never reach the
+pipeline, so they are not in the manifest and not in `fetched`; a cycle that
+dropped some logs one line saying how many. That is deliberate: on a full scan
+the exclusion happens inside Gmail and the number is not knowable at all, so a
+counter would only ever be filled by one of the two paths.
+
+**Turning it on.** The usual reason is recovering a message Gmail misfiled. If
+you want Trash but not Spam, set the key and put the discrimination in a rule:
+
+```yaml
+accounts:
+  - name: personal
+    gmail:
+      include_spam_trash: true
+rules:
+  - name: everything-but-spam
+    match:
+      not:
+        label: SPAM
+    dest: ~/Mail/archive
+```
+
+`validate` emits a warning when the key is `true`. The config is still valid —
+the warning is there so nobody turns it on by accident. See
+[filters.md](filters.md#the-spam-and-trash-labels) for how the key and the
+labels divide the work.
 
 ### `initial_lookback`
 
@@ -429,6 +504,7 @@ alone exit 0 — which is deliberate, and worth internalizing:
 | `from_domains_file` missing on disk | warning | **Owned by another program**, which may not have created it yet. The predicate matches nothing until it appears. |
 | No rules configured | warning | Valid, just useless. |
 | Duplicate format in one rule | warning | Harmless; collapsed at write time. |
+| `include_spam_trash: true` | warning | Legal and sometimes what you want, but it feeds attacker-authored mail to an AI agent. Never turn it on by accident. |
 
 That last-but-two row is the important one. The whole point of
 `from_domains_file` is that mail-muncher does not own it, so its absence can

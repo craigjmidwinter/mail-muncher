@@ -115,20 +115,25 @@ func (p *Provider) scanAfter(state provider.SyncState, firstEver bool) time.Time
 // returns the message ids in the order Gmail gave them (newest first),
 // deduplicated defensively across pages.
 //
-// includeSpamTrash is set, always. users.messages.list defaults to hiding Spam
-// and Trash, but users.history.list has no such notion — it reports everything
-// added anywhere in the mailbox — so the incremental path already delivers those
-// messages to the local filter engine. Leaving the default in place made the two
-// routes enumerate different mailboxes: a wanted message misfiled into Spam (or
-// a thread the user trashed and later cared about) is delivered by an
-// incremental run and skipped by the recovery scan that replaces an expired
-// cursor, and skipped for good, because that scan installs a fresh cursor on the
-// way out. Matching the history path is the only setting that makes the two
-// agree without dropping messages.
+// includeSpamTrash carries the account's `gmail.include_spam_trash` — nothing
+// more and nothing less. It is not a decision this function gets to make on its
+// own, because users.messages.list and users.history.list must enumerate the
+// same population.
 //
-// The SPAM and TRASH labels ride along on every RawMessage, so a user who does
-// not want them archived excludes them with a rule — the local filter engine
-// stays the authority on what is kept, which is the whole design.
+// The two endpoints are asymmetric: messages.list hides Spam and Trash unless
+// asked, while history.list has no such notion and reports everything added
+// anywhere in the mailbox. Left to their defaults they enumerate different
+// mailboxes, and the difference is silent data loss in one direction — a wanted
+// message misfiled into Spam is delivered by an incremental run, skipped by the
+// recovery scan that replaces an expired cursor, and skipped for good, because
+// that scan installs a fresh cursor on the way out. So whichever way the setting
+// points, both routes must point the same way: this flag is the full scan's half
+// and excludedBySpamTrash is history's.
+//
+// Excluding by default is the safe direction here, and unusually the safe
+// direction is also the smaller one. mail-muncher feeds an AI agent, so
+// delivered mail lands in an LLM's context window, and Spam is the one folder
+// whose contents are hostile by construction. See config.GmailConfig.
 func (p *Provider) listIDs(ctx context.Context, query string) ([]string, error) {
 	var (
 		ids       []string
@@ -145,7 +150,7 @@ func (p *Provider) listIDs(ctx context.Context, query string) ([]string, error) 
 			func(ctx context.Context) (*gmailapi.ListMessagesResponse, error) {
 				call := p.svc.Users.Messages.List(userID).
 					MaxResults(p.opts.PageSize).
-					IncludeSpamTrash(true).
+					IncludeSpamTrash(p.opts.IncludeSpamTrash).
 					Context(ctx)
 				if query != "" {
 					call = call.Q(query)
@@ -206,6 +211,25 @@ type fetchResult struct {
 // fn is called from a single goroutine, so sinks need no locking of their own.
 // The first error (a download failure or fn's own) cancels the pool, drains it,
 // and is returned; ids delivered before that stay marked seen in state.
+//
+// This is also where `gmail.include_spam_trash: false` bites on the incremental
+// route: a message that comes back wearing SPAM or TRASH is dropped instead of
+// being passed to fn. Both routes run through here, so the predicate applies to
+// both — see excludedBySpamTrash.
+//
+// A dropped message is deliberately *not* marked seen. The seen-set is the
+// record of what was delivered, and leaving excluded ids out of it is what keeps
+// the two routes' persisted state identical: the full scan never learns those
+// ids exist (the server filtered them), so if the history route recorded them
+// the two would diverge, and flipping the key to true later would find the
+// history route's ids already "seen" and never deliver them. Nothing re-fetches
+// them in a loop either — the history cursor advances past a message whatever we
+// decide about it, and a later full scan excludes them server-side.
+//
+// The cost is one users.messages.get per excluded message per time it is
+// enumerated. That is the price of history.list not having an includeSpamTrash
+// parameter: the labels are only knowable once the message is in hand. It is
+// paid in API calls, never in delivered mail.
 func (p *Provider) download(ctx context.Context, ids []string, state *provider.SyncState, fn func(provider.RawMessage) error) error {
 	pending := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -270,7 +294,10 @@ func (p *Provider) download(ctx context.Context, ids []string, state *provider.S
 		close(resCh)
 	}()
 
-	var firstErr error
+	var (
+		firstErr error
+		excluded int
+	)
 	for res := range resCh {
 		if firstErr != nil {
 			// Keep draining so the workers can finish and the pool can close.
@@ -281,12 +308,27 @@ func (p *Provider) download(ctx context.Context, ids []string, state *provider.S
 			cancel()
 			continue
 		}
+		if p.excludedBySpamTrash(res.msg) {
+			excluded++
+			continue
+		}
 		if err := fn(res.msg); err != nil {
 			firstErr = err
 			cancel()
 			continue
 		}
 		state.MarkSeen(res.msg.ID)
+	}
+
+	// Excluded mail is reported here and nowhere else. It never reached the
+	// pipeline, so it is not in the run summary's `fetched` — and it could not
+	// be, honestly: on a full scan the exclusion happens inside Gmail and the
+	// count is not knowable at all. A counter only the incremental route could
+	// fill would misreport the very symmetry this setting exists to preserve.
+	if excluded > 0 {
+		slog.Info("gmail excluded spam/trash from this fetch",
+			"account", p.account, "excluded", excluded,
+			"hint", "set gmail.include_spam_trash: true to fetch them")
 	}
 
 	if firstErr != nil {

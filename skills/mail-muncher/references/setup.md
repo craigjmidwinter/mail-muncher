@@ -86,8 +86,9 @@ every subcommand. Full reference:
 | `provider` | `gmail` | `gmail` is the only recognized value. |
 | `gmail.credentials_file` | — | Required. The OAuth **client** JSON from Google Cloud. |
 | `gmail.token_file` | — | Required. Where `auth` caches the token, mode 0600. |
-| `gmail.query` | none | Optional Gmail search expression. A cost optimization for **full scans only** — incremental history results are not query-filtered and the query is deliberately not re-applied locally. Keep it broad or omit it. |
+| `gmail.query` | none | Optional Gmail search expression. A cost optimization for the **first-ever scan only** — incremental history results are not query-filtered, a recovery scan drops it, and the query is deliberately not re-applied locally. Keep it broad or omit it. Do not put `-in:spam` here; see the next row. |
 | `gmail.initial_lookback` | `720h` | Go duration bounding how far back the first-ever scan reaches. Must be positive. |
+| `gmail.include_spam_trash` | `false` | Whether mail in Spam or Trash is fetched at all. Off by default because delivered mail is read by an AI agent and Spam is where hostile, attacker-authored text lives. Both sync paths honour it identically. `validate` warns when it is `true`. |
 
 ### `rules[]`
 
