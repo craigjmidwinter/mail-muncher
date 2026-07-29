@@ -1,6 +1,7 @@
 <!--
   Overrides the empty head_custom.html that just-the-docs ships, which its
-  _includes/head.html includes on every page.
+  _includes/head.html includes on every page — after {% seo %}, so anything
+  here is additive to jekyll-seo-tag rather than a replacement for it.
 
   robots.txt is only honoured at the domain root. This is a project page, so
   ours is served at /mail-muncher/robots.txt and crawlers never read it — the
@@ -8,3 +9,32 @@
   here gives it a second, path-independent route.
 -->
 <link rel="sitemap" type="application/xml" title="Sitemap" href="{{ '/sitemap.xml' | relative_url }}">
+
+<!--
+  Favicons. The theme's own favicon.html only ever emits a /favicon.ico, which
+  this site does not ship; these are the modern set. The 16 and 32 rasters are
+  the simplified face-only mark — the full mark's teeth and envelope turn to
+  mush below about 48px. The SVG is that same small mark, so a browser that
+  prefers it gets the identical drawing at any size.
+-->
+<link rel="icon" href="{{ '/assets/brand/mark-small-badge.svg' | relative_url }}" type="image/svg+xml">
+<link rel="icon" href="{{ '/assets/brand/favicon-32.png' | relative_url }}" sizes="32x32" type="image/png">
+<link rel="icon" href="{{ '/assets/brand/favicon-16.png' | relative_url }}" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="{{ '/assets/brand/apple-touch-icon.png' | relative_url }}" sizes="180x180">
+
+<!--
+  Match the browser chrome to the scheme the stylesheet is about to resolve to.
+-->
+<meta name="theme-color" content="#FBF8F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17130F" media="(prefers-color-scheme: dark)">
+
+<!--
+  jekyll-seo-tag emits og:image and twitter:image from the `image` default in
+  _config.yml. It does not emit the dimensions or the alt text, and unfurls are
+  noticeably better with them.
+-->
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:alt" content="mail-muncher — an email client for AI agents">
+<meta name="twitter:image:alt" content="mail-muncher — an email client for AI agents">

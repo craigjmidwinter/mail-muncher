@@ -51,6 +51,9 @@ defaults:
       path: ""
     values:
       layout: default
+      # Picked up by jekyll-seo-tag for og:image and twitter:image. Relative
+      # paths are resolved against url + baseurl, so links unfurl with the mark.
+      image: /assets/brand/social-preview.png
 
 # --- just-the-docs options -------------------------------------------------
 
@@ -65,7 +68,28 @@ search:
   button: false
 
 heading_anchors: true
-color_scheme: light
+
+# The custom scheme in _sass/color_schemes/mail-muncher.scss. Its dark
+# counterpart is not a second scheme: it ships in the same stylesheet as a
+# prefers-color-scheme block, so there is no flash of light-mode colour and no
+# toggle to get wrong. See _sass/custom/custom.scss.
+color_scheme: mail-muncher
+
+# Replaces the sidebar title text with the lockup (mark + wordmark). The theme
+# renders it as a background image on a div carrying aria-label="{{ site.title }}",
+# so the accessible name is unchanged.
+logo: "/assets/brand/lockup.svg"
+
+# Callouts. The colour names index just-the-docs' own ramp, which
+# _sass/custom/setup.scss retints to the mail-muncher palette.
+callouts_level: quiet
+callouts:
+  note:
+    title: Note
+    color: grey-dk
+  warning:
+    title: Warning
+    color: red
 
 aux_links:
   "GitHub":
@@ -93,9 +117,13 @@ social:
     - https://github.com/craigjmidwinter/mail-muncher
 
 twitter:
-  card: summary
+  card: summary_large_image
 
 # --- Build -----------------------------------------------------------------
+
+# Both colour schemes live in one stylesheet, so it is worth minifying.
+sass:
+  style: compressed
 
 exclude:
   - Gemfile

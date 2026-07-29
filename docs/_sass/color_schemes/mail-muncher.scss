@@ -1,0 +1,46 @@
+// The mail-muncher colour scheme - light side.
+//
+// Selected by `color_scheme: mail-muncher` in _config.yml. just-the-docs always
+// imports its own `light` scheme first, so this file only has to state the
+// values that differ; everything it does not name keeps a theme default.
+//
+// The dark side is NOT a second scheme file. It lives in _sass/custom/custom.scss
+// as a `prefers-color-scheme: dark` block, so both sides ship in one stylesheet
+// and a dark-mode reader never sees a flash of light-mode colour. See the long
+// comment there.
+//
+// Contrast ratios, measured, all >= 4.5:1 for body-size text:
+//
+//   #1F1A17 Ink      on #FBF8F5 Paper    16.29:1  body text
+//   #1F1A17 Ink      on #F1EBE4 Surface  14.56:1  code, table stripes, sidebar
+//   #6B625C Muted    on #FBF8F5 Paper     5.63:1  secondary text
+//   #6B625C Muted    on #F1EBE4 Surface   5.03:1  secondary text on surface
+//   #B33E2B Deep     on #FBF8F5 Paper     5.45:1  LINKS
+//   #B33E2B Deep     on #F1EBE4 Surface   4.87:1  links inside code/sidebar
+//   #FBF8F5 Paper    on #B33E2B Deep      5.45:1  primary button label
+//
+// The plain Accent #E0533D is only 3.63:1 on Paper. That passes for large text
+// and for UI component boundaries, and fails AA for body-size text, so it is
+// never used as a text colour on the light side - `$link-color` takes Accent
+// deep instead. On the dark side the relationship inverts and the Accent is
+// the readable one; see custom.scss.
+
+$color-scheme: light;
+
+$body-background-color: #fbf8f5; // Paper
+$body-text-color: #1f1a17; // Ink
+$body-heading-color: #1f1a17; // Ink
+$link-color: #b33e2b; // Accent deep - NOT Accent; see above
+$nav-child-link-color: #6b625c; // Muted
+$sidebar-color: #f1ebe4; // Surface
+$feedback-color: #f1ebe4; // Surface
+$base-button-color: #f1ebe4; // Surface
+$btn-primary-color: #b33e2b; // Accent deep
+$code-background-color: #f1ebe4; // Surface
+$table-background-color: #fbf8f5; // Paper
+$search-background-color: #fbf8f5; // Paper
+$search-result-preview-color: #6b625c; // Muted
+
+// Borders are Muted at low alpha rather than a seventh grey: a full-strength
+// #6B625C rule between every table row would read as a cage.
+$border-color: rgba(#6b625c, 0.25);

@@ -1,0 +1,17 @@
+// Imported by just-the-docs before its own colour schemes, so anything set
+// here wins over the theme's `!default` values.
+//
+// The theme derives callout borders and the .text-*/.bg-* utility classes from
+// its own colour ramp rather than from the scheme variables. Retinting the two
+// ramps this site actually uses keeps a callout from introducing a colour that
+// is not in the mail-muncher palette. Every value below is from BRAND.md.
+
+// Accent ramp - used by `color: red` callouts.
+$red-000: #f2765f; // Accent (dark)
+$red-100: #e0533d; // Accent (light)
+$red-200: #e0533d; // Accent (light)
+$red-300: #b33e2b; // Accent deep (light)
+
+// Neutral ramp - used by `color: grey-dk` callouts.
+$grey-dk-000: #a79c93; // Muted (dark)
+$grey-dk-300: #1f1a17; // Ink (light)

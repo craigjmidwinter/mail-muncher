@@ -1,0 +1,164 @@
+// mail-muncher: display face, logo sizing, and the dark colour scheme.
+//
+// just-the-docs imports this last, after its own modules and after
+// _sass/color_schemes/mail-muncher.scss.
+
+// ---------------------------------------------------------------- the font --
+//
+// Silkscreen Bold by Jason Kottke, SIL Open Font License 1.1. The file is
+// committed under assets/fonts/ with its OFL.txt; nothing here reaches a CDN,
+// so the site renders identically offline. The URL is relative to this
+// stylesheet (assets/css/), which keeps `baseurl` out of the SCSS.
+@font-face {
+  font-family: "Silkscreen";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../fonts/Silkscreen-Bold.woff2") format("woff2");
+}
+
+// Silkscreen is a bitmap face drawn on an 8px grid, so it is only crisp at
+// whole multiples of 8px, and it has no lowercase forms - every heading set in
+// it renders as capitals. Both facts constrain where it may be used:
+//
+//   yes  h1, h2, the wordmark, the social card
+//   no   body copy, h3 and below, nav lists, tables, code, anything under 16px
+//
+// Coverage was checked against the glyphs this project's prose actually uses:
+// em dash, en dash, curly quotes, middot, bullet, ellipsis, Latin-1 accents and
+// the ASCII punctuation set are all present. Arrows (U+2192) are not, so a
+// heading containing one falls through to the stack below.
+$mm-display: "Silkscreen", "SFMono-Regular", menlo, consolas, monospace;
+
+h1,
+.text-alpha {
+  font-family: $mm-display;
+  font-size: 32px !important;
+  font-weight: 700;
+  line-height: 40px;
+  letter-spacing: 2px;
+}
+
+h2,
+.text-beta {
+  font-family: $mm-display;
+  font-size: 24px !important;
+  font-weight: 700;
+  line-height: 32px;
+  letter-spacing: 1px;
+}
+
+// Reference headings are frequently a bare config key or tool name. Those are
+// case-sensitive identifiers, and a capitals-only display face would misstate
+// them, so code inside a heading keeps the monospace stack and its own case.
+h1 code,
+h2 code {
+  font-family: $mono-font-family;
+  font-size: 0.8em;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+// --------------------------------------------------------------- the logo --
+//
+// `site.logo` replaces the sidebar title text with a background image, so the
+// asset is the full lockup - mark plus wordmark. It is pixel art: pin it to an
+// exact 2x of its 16-unit grid rather than letting `contain` land it on a
+// fractional scale, which would make the pixels uneven.
+.site-logo {
+  background-size: auto 32px;
+  min-height: 32px;
+}
+
+// The theme gives the title 32px of horizontal padding at md and up, which
+// leaves 183px for a lockup that wants 204. Tighten it rather than let the
+// wordmark clip or the pixels land on a fractional scale.
+.site-title {
+  padding-right: $sp-2;
+  padding-left: $sp-4;
+}
+
+// ------------------------------------------------------------- dark scheme --
+//
+// just-the-docs compiles one scheme per stylesheet and switches by swapping the
+// <link>, which flashes. Instead, the theme's own modules are re-imported here
+// inside a media query with the dark values bound, so light and dark ship in a
+// single stylesheet that the browser resolves before first paint. No JavaScript,
+// no toggle, no flash, and no rule left un-themed because someone forgot to
+// list its selector.
+//
+// Contrast ratios, measured:
+//
+//   #F4EFEA Ink      on #17130F Paper    16.17:1  body text
+//   #F4EFEA Ink      on #221C18 Surface  14.74:1  code, sidebar, tables
+//   #A79C93 Muted    on #17130F Paper     6.88:1  secondary text
+//   #A79C93 Muted    on #221C18 Surface   6.27:1  secondary text on surface
+//   #F2765F Accent   on #17130F Paper     6.63:1  LINKS
+//   #F2765F Accent   on #221C18 Surface   6.04:1  links on surface
+//   #17130F Paper    on #F2765F Accent    6.63:1  primary button label
+@media (prefers-color-scheme: dark) {
+  $color-scheme: dark;
+
+  $body-background-color: #17130f; // Paper (dark)
+  $body-text-color: #f4efea; // Ink (dark)
+  $body-heading-color: #f4efea; // Ink (dark)
+  $link-color: #f2765f; // Accent (dark)
+  $nav-child-link-color: #a79c93; // Muted (dark)
+  $sidebar-color: #221c18; // Surface (dark)
+  $feedback-color: #221c18; // Surface (dark)
+  $base-button-color: #221c18; // Surface (dark)
+  $btn-primary-color: #e0533d; // Accent deep (dark)
+  $code-background-color: #221c18; // Surface (dark)
+  $table-background-color: #221c18; // Surface (dark)
+  $search-background-color: #221c18; // Surface (dark)
+  $search-result-preview-color: #a79c93; // Muted (dark)
+  $border-color: rgba(#a79c93, 0.28);
+
+  @import "./vendor/accessible-pygments/github-dark";
+  @import "./modules";
+
+  // The lockup wordmark is Ink, which has to invert with the page.
+  .site-logo {
+    background-image: url("../brand/lockup-dark.svg");
+  }
+
+  // Re-state the display face: the re-import above brought the theme's own
+  // typography rules back in after the ones at the top of this file.
+  h1,
+  .text-alpha {
+    font-family: $mm-display;
+    font-size: 32px !important;
+    font-weight: 700;
+    line-height: 40px;
+    letter-spacing: 2px;
+  }
+
+  h2,
+  .text-beta {
+    font-family: $mm-display;
+    font-size: 24px !important;
+    font-weight: 700;
+    line-height: 32px;
+    letter-spacing: 1px;
+  }
+
+  h1 code,
+  h2 code {
+    font-family: $mono-font-family;
+    font-size: 0.8em;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .site-logo {
+    background-size: auto 32px;
+    min-height: 32px;
+  }
+
+  .site-title {
+    padding-right: $sp-2;
+    padding-left: $sp-4;
+  }
+}
