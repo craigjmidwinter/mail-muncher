@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/provider"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 	gmailapi "google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"

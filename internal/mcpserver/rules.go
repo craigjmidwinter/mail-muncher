@@ -8,8 +8,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/filter"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/filter"
 )
 
 // maxMatchDepth bounds the walk over a rule's match tree. YAML aliases can

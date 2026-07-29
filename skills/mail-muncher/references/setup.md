@@ -8,13 +8,13 @@ credentials, writing a config, or scheduling it.
 Requires Go 1.25 or newer.
 
 ```bash
-go install github.com/craigmidwinter/mail-muncher/cmd/mail-muncher@latest
+go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest
 ```
 
 or from a clone, which stamps the version from `git describe`:
 
 ```bash
-git clone https://github.com/craigmidwinter/mail-muncher
+git clone https://github.com/craigjmidwinter/mail-muncher
 cd mail-muncher
 make build        # -> ./mail-muncher
 ```
@@ -28,7 +28,7 @@ Cloud project and it stays theirs — their quota, their audit log, their
 credentials on their disk. This needs a browser and about ten minutes; it
 cannot be done for them from a terminal. Full walkthrough with every error
 message: `docs/gmail-setup.md` in the repo, or
-<https://craigmidwinter.github.io/mail-muncher/gmail-setup>.
+<https://craigjmidwinter.github.io/mail-muncher/gmail-setup>.
 
 The shape of it:
 
@@ -65,7 +65,7 @@ for the redirect, and writes the token to the account's `token_file` with mode
 
 Default path `~/.config/mail-muncher/config.yml`; `--config` overrides it on
 every subcommand. Full reference:
-<https://craigmidwinter.github.io/mail-muncher/configuration>.
+<https://craigjmidwinter.github.io/mail-muncher/configuration>.
 
 ### Top level
 

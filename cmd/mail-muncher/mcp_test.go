@@ -16,8 +16,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/craigmidwinter/mail-muncher/internal/pipeline"
-	"github.com/craigmidwinter/mail-muncher/internal/sink"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
+	"github.com/craigjmidwinter/mail-muncher/internal/sink"
 )
 
 // writeMCPConfig writes a config that loads and validates cleanly, with a

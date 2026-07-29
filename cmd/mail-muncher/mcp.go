@@ -9,8 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/craigmidwinter/mail-muncher/internal/mcpserver"
-	"github.com/craigmidwinter/mail-muncher/internal/pipeline"
+	"github.com/craigjmidwinter/mail-muncher/internal/mcpserver"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
 )
 
 // newMCPCommand builds the `mcp` subcommand: an MCP server over the stored

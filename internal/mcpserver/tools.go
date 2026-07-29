@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
 )
 
 // Limits every tool applies. They are part of the contract an agent codes

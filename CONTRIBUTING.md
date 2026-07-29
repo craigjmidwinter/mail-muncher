@@ -10,7 +10,7 @@ Requires Go 1.25 or newer. No other toolchain, no code generation, no build
 tags.
 
 ```bash
-git clone https://github.com/craigmidwinter/mail-muncher
+git clone https://github.com/craigjmidwinter/mail-muncher
 cd mail-muncher
 make build          # -> ./mail-muncher
 make test           # go test ./...
@@ -56,7 +56,7 @@ internal/
   sink/                  on-disk layout, .eml and markdown writers
   state/                 per-account sync state files, cycle lockfile
   pipeline/              one cycle: fetch → parse → evaluate → sink → save
-  deps/                  blank imports pinning dependencies (temporary)
+  mcpserver/             stdio MCP server over the stored archive
 docs/                    user-facing documentation
 examples/                runnable configs, verified against `validate`
 contrib/                 launchd plist, crontab sample

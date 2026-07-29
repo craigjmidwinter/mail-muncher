@@ -220,7 +220,7 @@ years more mileage.
 Requires Go 1.25 or newer.
 
 ```bash
-git clone https://github.com/craigmidwinter/mail-muncher
+git clone https://github.com/craigjmidwinter/mail-muncher
 cd mail-muncher
 make build          # -> ./mail-muncher
 ```
@@ -228,7 +228,7 @@ make build          # -> ./mail-muncher
 Or install straight into `$GOBIN`:
 
 ```bash
-go install github.com/craigmidwinter/mail-muncher/cmd/mail-muncher@latest
+go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest
 ```
 
 `make build` stamps the version from `git describe`; `go install` and plain
@@ -1003,7 +1003,7 @@ write against, but treat it as subject to change until 1.0.
 
 ## Documentation
 
-Browsable at <https://craigmidwinter.github.io/mail-muncher/>, or in this repo:
+Browsable at <https://craigjmidwinter.github.io/mail-muncher/>, or in this repo:
 
 - [docs/gmail-setup.md](docs/gmail-setup.md) — Google Cloud walkthrough and
   OAuth troubleshooting.

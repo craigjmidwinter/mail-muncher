@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/provider"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 )
 
 // Quarantine file permissions. A quarantined message is a whole email sitting

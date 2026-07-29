@@ -13,9 +13,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/model"
-	"github.com/craigmidwinter/mail-muncher/internal/sink"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/model"
+	"github.com/craigjmidwinter/mail-muncher/internal/sink"
 )
 
 // fixture is a temporary archive: a real config, real dest directories, and

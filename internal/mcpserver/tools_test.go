@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/craigmidwinter/mail-muncher/internal/model"
+	"github.com/craigjmidwinter/mail-muncher/internal/model"
 )
 
 // seedArchive writes a small but varied archive: two accounts, three rules, a

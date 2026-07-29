@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/craigmidwinter/mail-muncher/internal/pipeline"
-	"github.com/craigmidwinter/mail-muncher/internal/state"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
+	"github.com/craigjmidwinter/mail-muncher/internal/state"
 	"github.com/stretchr/testify/require"
 )
 

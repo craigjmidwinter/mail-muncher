@@ -23,7 +23,7 @@ no config edit, no restart, no redeploy.
 
 [Get started](gmail-setup.md){: .btn .btn-primary }
 [Configuration reference](configuration.md){: .btn }
-[View on GitHub](https://github.com/craigmidwinter/mail-muncher){: .btn }
+[View on GitHub](https://github.com/craigjmidwinter/mail-muncher){: .btn }
 
 ---
 
@@ -111,13 +111,13 @@ conversation, not a message.
 Requires Go 1.25 or newer.
 
 ```bash
-go install github.com/craigmidwinter/mail-muncher/cmd/mail-muncher@latest
+go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest
 ```
 
 Or from a clone, which stamps the version from `git describe`:
 
 ```bash
-git clone https://github.com/craigmidwinter/mail-muncher
+git clone https://github.com/craigjmidwinter/mail-muncher
 cd mail-muncher
 make build          # -> ./mail-muncher
 ```
@@ -169,7 +169,7 @@ Claude Code users can install the bundled plugin, which registers the MCP server
 and ships a skill that teaches an agent to use the tool:
 
 ```
-/plugin marketplace add craigmidwinter/mail-muncher
+/plugin marketplace add craigjmidwinter/mail-muncher
 /plugin install mail-muncher@mail-muncher
 ```
 
@@ -183,9 +183,9 @@ and ships a skill that teaches an agent to use the tool:
 | [Architecture](architecture.md) | The pipeline, its seams, and where a change belongs. |
 
 Also in the repository:
-[README](https://github.com/craigmidwinter/mail-muncher#readme) ·
-[CONTRIBUTING](https://github.com/craigmidwinter/mail-muncher/blob/main/CONTRIBUTING.md) ·
-[example configs](https://github.com/craigmidwinter/mail-muncher/tree/main/examples)
+[README](https://github.com/craigjmidwinter/mail-muncher#readme) ·
+[CONTRIBUTING](https://github.com/craigjmidwinter/mail-muncher/blob/main/CONTRIBUTING.md) ·
+[example configs](https://github.com/craigjmidwinter/mail-muncher/tree/main/examples)
 
 ## Status and scope
 
@@ -226,4 +226,4 @@ mileage.
 ---
 
 MIT licensed. Source at
-[github.com/craigmidwinter/mail-muncher](https://github.com/craigmidwinter/mail-muncher).
+[github.com/craigjmidwinter/mail-muncher](https://github.com/craigjmidwinter/mail-muncher).

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
 )

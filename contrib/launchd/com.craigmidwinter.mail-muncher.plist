@@ -9,15 +9,15 @@
 
   Install:
 
-      cp contrib/launchd/com.craigmidwinter.mail-muncher.plist \
+      cp contrib/launchd/com.craigjmidwinter.mail-muncher.plist \
          ~/Library/LaunchAgents/
       # edit the paths in the copy, then:
-      launchctl load ~/Library/LaunchAgents/com.craigmidwinter.mail-muncher.plist
+      launchctl load ~/Library/LaunchAgents/com.craigjmidwinter.mail-muncher.plist
 
   Check on it, stop it, and reload it after an edit:
 
       launchctl list | grep mail-muncher
-      launchctl unload ~/Library/LaunchAgents/com.craigmidwinter.mail-muncher.plist
+      launchctl unload ~/Library/LaunchAgents/com.craigjmidwinter.mail-muncher.plist
       tail -f ~/Library/Logs/mail-muncher.err.log
 
   `unload` sends SIGTERM, which is the daemon's graceful shutdown: the
@@ -35,7 +35,7 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.craigmidwinter.mail-muncher</string>
+	<string>com.craigjmidwinter.mail-muncher</string>
 
 	<!-- Absolute paths: launchd's PATH is not your shell's. -->
 	<key>ProgramArguments</key>

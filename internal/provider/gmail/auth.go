@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	gmailapi "google.golang.org/api/gmail/v1"

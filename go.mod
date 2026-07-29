@@ -1,4 +1,4 @@
-module github.com/craigmidwinter/mail-muncher
+module github.com/craigjmidwinter/mail-muncher
 
 go 1.25.0
 

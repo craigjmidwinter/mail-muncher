@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/craigmidwinter/mail-muncher/internal/provider"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 	gmailapi "google.golang.org/api/gmail/v1"
 )
 

@@ -11,8 +11,8 @@ import (
 	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
 	"gopkg.in/yaml.v3"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/model"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/model"
 )
 
 const (

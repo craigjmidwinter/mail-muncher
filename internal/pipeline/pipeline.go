@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/filter"
-	"github.com/craigmidwinter/mail-muncher/internal/model"
-	"github.com/craigmidwinter/mail-muncher/internal/provider"
-	"github.com/craigmidwinter/mail-muncher/internal/provider/gmail"
-	"github.com/craigmidwinter/mail-muncher/internal/sink"
-	"github.com/craigmidwinter/mail-muncher/internal/state"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/filter"
+	"github.com/craigjmidwinter/mail-muncher/internal/model"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider/gmail"
+	"github.com/craigjmidwinter/mail-muncher/internal/sink"
+	"github.com/craigjmidwinter/mail-muncher/internal/state"
 )
 
 // ProviderFactory builds the fetch backend for one configured account.

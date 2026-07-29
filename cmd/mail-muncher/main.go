@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/craigmidwinter/mail-muncher/internal/pipeline"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
 )
 
 func main() {

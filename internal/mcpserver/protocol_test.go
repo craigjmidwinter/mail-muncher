@@ -13,8 +13,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/craigmidwinter/mail-muncher/internal/pipeline"
-	"github.com/craigmidwinter/mail-muncher/internal/state"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
+	"github.com/craigjmidwinter/mail-muncher/internal/state"
 )
 
 // connect runs the server on the SDK's in-memory transport and returns an

@@ -5,8 +5,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/pipeline"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/pipeline"
 	"github.com/spf13/cobra"
 )
 

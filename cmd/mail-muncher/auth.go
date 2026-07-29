@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/provider/gmail"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider/gmail"
 	"github.com/spf13/cobra"
 )
 

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/model"
+	"github.com/craigjmidwinter/mail-muncher/internal/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )

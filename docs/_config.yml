@@ -1,7 +1,7 @@
 # Jekyll configuration for the mail-muncher documentation site.
 #
 # Served by GitHub Pages from the /docs directory on the default branch:
-#   https://craigmidwinter.github.io/mail-muncher/
+#   https://craigjmidwinter.github.io/mail-muncher/
 #
 # This is a project page, so `url` is the user domain and `baseurl` is the
 # repository name. Getting `baseurl` wrong breaks every link on the site.
@@ -12,10 +12,10 @@ description: >-
   scope, filters it with ordered composable rules, and delivers the matches to
   disk as byte-faithful .eml plus markdown with YAML frontmatter — with a stdio
   MCP server over the archive.
-url: "https://craigmidwinter.github.io"
+url: "https://craigjmidwinter.github.io"
 baseurl: "/mail-muncher"
 
-repository: craigmidwinter/mail-muncher
+repository: craigjmidwinter/mail-muncher
 lang: en_US
 
 # Theme. `remote_theme` is supported by the plain GitHub Pages build, so no
@@ -69,7 +69,7 @@ color_scheme: light
 
 aux_links:
   "GitHub":
-    - "https://github.com/craigmidwinter/mail-muncher"
+    - "https://github.com/craigjmidwinter/mail-muncher"
 aux_links_new_tab: true
 
 back_to_top: true
@@ -81,7 +81,7 @@ footer_content: >-
 
 nav_external_links:
   - title: mail-muncher on GitHub
-    url: https://github.com/craigmidwinter/mail-muncher
+    url: https://github.com/craigjmidwinter/mail-muncher
 
 # --- SEO -------------------------------------------------------------------
 
@@ -90,7 +90,7 @@ author: Craig Midwinter
 social:
   name: mail-muncher
   links:
-    - https://github.com/craigmidwinter/mail-muncher
+    - https://github.com/craigjmidwinter/mail-muncher
 
 twitter:
   card: summary

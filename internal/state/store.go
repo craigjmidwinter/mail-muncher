@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/craigmidwinter/mail-muncher/internal/provider"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 )
 
 // File permissions: state can reveal which accounts exist and which message ids

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/filter"
-	"github.com/craigmidwinter/mail-muncher/internal/state"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/filter"
+	"github.com/craigjmidwinter/mail-muncher/internal/state"
 )
 
 // init installs the filter package's match-tree compiler as config's

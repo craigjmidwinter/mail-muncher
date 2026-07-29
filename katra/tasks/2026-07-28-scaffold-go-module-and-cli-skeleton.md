@@ -16,7 +16,7 @@ epic: core-skeleton-and-config
 mail-muncher is a small Go tool that pulls mail from a provider, evaluates each message against configurable rules, and writes matches to the filesystem. This task creates the repo skeleton every other task builds on.
 
 ## Spec
-- `go mod init github.com/craigmidwinter/mail-muncher` (Go 1.22+).
+- `go mod init github.com/craigjmidwinter/mail-muncher` (Go 1.22+).
 - CLI with `github.com/spf13/cobra`. Root command `mail-muncher` with a persistent `--config` flag (default `~/.config/mail-muncher/config.yml`) and `--version`.
 - Subcommand stubs (each prints "not implemented" and exits 1 for now):
   - `run` — one-shot fetch/filter/store cycle (cron entrypoint). Flags: `--dry-run`.

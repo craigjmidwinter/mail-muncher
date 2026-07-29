@@ -16,8 +16,8 @@ OAuth scope, evaluates every message against ordered filter rules, and writes
 matches to a directory as byte-faithful `.eml` plus (optionally) markdown with
 YAML frontmatter. A stdio MCP server serves that archive back as tool calls.
 
-Repo: <https://github.com/craigmidwinter/mail-muncher> ·
-Docs: <https://craigmidwinter.github.io/mail-muncher/>
+Repo: <https://github.com/craigjmidwinter/mail-muncher> ·
+Docs: <https://craigjmidwinter.github.io/mail-muncher/>
 
 ## When this is the right tool
 
@@ -95,7 +95,7 @@ Semantics that matter when you write this file:
 Full walkthrough: [references/setup.md](references/setup.md). The short version:
 
 ```bash
-go install github.com/craigmidwinter/mail-muncher/cmd/mail-muncher@latest   # needs Go 1.25+
+go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest   # needs Go 1.25+
 mkdir -p ~/.config/mail-muncher                                            # then write config.yml
 mail-muncher auth --account personal                                       # OAuth, opens a browser
 mail-muncher validate                                                      # parse + compile + check files

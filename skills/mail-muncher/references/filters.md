@@ -1,7 +1,7 @@
 # Filters: the match-tree language
 
 Load this when writing or debugging a rule's `match:`. Full reference and
-cookbook: <https://craigmidwinter.github.io/mail-muncher/filters>.
+cookbook: <https://craigjmidwinter.github.io/mail-muncher/filters>.
 
 ## Shape
 

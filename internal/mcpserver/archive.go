@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/sink"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/sink"
 )
 
 // Errors a tool turns into a clean, non-fatal tool error. They are compared

@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/craigmidwinter/mail-muncher/internal/config"
-	"github.com/craigmidwinter/mail-muncher/internal/provider"
-	"github.com/craigmidwinter/mail-muncher/internal/state"
+	"github.com/craigjmidwinter/mail-muncher/internal/config"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider"
+	"github.com/craigjmidwinter/mail-muncher/internal/state"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
