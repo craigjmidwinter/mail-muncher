@@ -1,0 +1,11 @@
+# Domain list as the job-search tracker writes it.
+# Comments, blank lines and stray whitespace are all tolerated.
+
+example.com
+  Mail.EXAMPLE.org
+@stripe.com          # entries may be written as addresses
+squareup.com
+
+# a duplicate, and an entry that does not look like a domain
+example.com
+localhost

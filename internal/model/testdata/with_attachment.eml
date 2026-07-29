@@ -1,0 +1,30 @@
+Message-ID: <attach-003@offers.example>
+Date: Sat, 25 Jul 2026 11:00:00 +0200
+From: Hiring Manager <hiring@Offers.Example>
+To: craig@example.org
+Subject: Offer letter attached
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="MIXEDBOUNDARY"
+
+--MIXEDBOUNDARY
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Please find the offer letter attached.
+
+--MIXEDBOUNDARY
+Content-Type: application/pdf; name="offer letter.pdf"
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="offer letter.pdf"
+
+SGVsbG8sIGF0dGFjaG1lbnQhClNlY29uZCBsaW5lLgo=
+
+--MIXEDBOUNDARY
+Content-Type: text/csv; charset=utf-8
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="benefits.csv"
+
+plan,cost
+gold,100
+
+--MIXEDBOUNDARY--

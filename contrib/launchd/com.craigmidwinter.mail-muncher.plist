@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  mail-muncher as a per-user launchd agent (macOS).
+
+  EVERY PATH BELOW IS A PLACEHOLDER. `/Users/YOUR-USERNAME` is not your home
+  directory and `launchd` does not expand `~` or `$HOME` in this file, so
+  replace all four occurrences with real absolute paths before installing.
+
+  Install:
+
+      cp contrib/launchd/com.craigmidwinter.mail-muncher.plist \
+         ~/Library/LaunchAgents/
+      # edit the paths in the copy, then:
+      launchctl load ~/Library/LaunchAgents/com.craigmidwinter.mail-muncher.plist
+
+  Check on it, stop it, and reload it after an edit:
+
+      launchctl list | grep mail-muncher
+      launchctl unload ~/Library/LaunchAgents/com.craigmidwinter.mail-muncher.plist
+      tail -f ~/Library/Logs/mail-muncher.err.log
+
+  `unload` sends SIGTERM, which is the daemon's graceful shutdown: the
+  in-flight cycle finishes the message it is on, state is saved, and the
+  process exits 0.
+
+  This is a LaunchAgent, so it runs as you and only while you are logged in —
+  which is what you want, since the config, the OAuth token and the destination
+  directories all live in your home directory. Do not install it into
+  /Library/LaunchDaemons.
+
+  Prefer cron? See ../crontab.sample; `run` and `daemon` share one lockfile, so
+  the two can even coexist.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.craigmidwinter.mail-muncher</string>
+
+	<!-- Absolute paths: launchd's PATH is not your shell's. -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/mail-muncher</string>
+		<string>daemon</string>
+		<string>--interval</string>
+		<string>5m</string>
+		<string>--config</string>
+		<string>/Users/YOUR-USERNAME/.config/mail-muncher/config.yml</string>
+		<string>--log-level</string>
+		<string>info</string>
+	</array>
+
+	<!-- Start at login, and again immediately whenever the plist is loaded. -->
+	<key>RunAtLoad</key>
+	<true/>
+
+	<!--
+	  Restart only when the daemon exits non-zero, i.e. when something went
+	  wrong. A plain `<key>KeepAlive</key><true/>` would also restart it after
+	  the clean exit 0 you asked for with `launchctl unload` or a SIGTERM, which
+	  makes it impossible to stop without unloading.
+
+	  Note the one status worth watching for in the log: exit 3 means another
+	  mail-muncher already held the cycle lock at startup. launchd will keep
+	  retrying every ThrottleInterval seconds; if it never clears, look for a
+	  stray process or a second copy of this agent.
+	-->
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+
+	<!-- Don't hot-loop on a config that will never load. Default is 10s. -->
+	<key>ThrottleInterval</key>
+	<integer>60</integer>
+
+	<!--
+	  stdout is the manifest stream (empty unless you add --json to
+	  ProgramArguments); stderr is the log. Keeping them in separate files is
+	  what lets you `tail -f` the JSON with an agent while reading the log
+	  yourself. Create ~/Library/Logs first if it does not exist.
+	-->
+	<key>StandardOutPath</key>
+	<string>/Users/YOUR-USERNAME/Library/Logs/mail-muncher.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/YOUR-USERNAME/Library/Logs/mail-muncher.err.log</string>
+
+	<!-- Background priority: this is polling, never interactive. -->
+	<key>ProcessType</key>
+	<string>Background</string>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/YOUR-USERNAME</string>
+</dict>
+</plist>

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mail-muncher": {
+      "command": "mail-muncher",
+      "args": ["mcp"]
+    }
+  }
+}

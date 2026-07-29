@@ -1,0 +1,10 @@
+Message-ID: <html-005@newsletter.example>
+Date: Thu, 23 Jul 2026 12:00:00 +0000
+From: Newsletter <news@Newsletter.Example>
+To: craig@example.org
+Subject: This week in email
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><body><h1>This week</h1><p>Nothing happened.</p></body></html>

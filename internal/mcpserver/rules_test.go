@@ -1,0 +1,176 @@
+package mcpserver
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
+)
+
+// TestListRulesDescribesEveryRule: shape, ordering, and the derived fields.
+func TestListRulesDescribesEveryRule(t *testing.T) {
+	f := seedArchive(t)
+	s := f.server(nil)
+
+	got, err := s.listRules()
+	require.NoError(t, err)
+	require.Len(t, got.Rules, 3)
+
+	jobs := got.Rules[0]
+	require.Equal(t, "job-search", jobs.Name)
+	require.Equal(t, "personal", jobs.Account)
+	require.Equal(t, []string{"personal"}, jobs.Accounts)
+	require.Equal(t, f.dest("job-search"), jobs.Dest)
+	require.Equal(t, []string{"eml", "markdown"}, jobs.Formats)
+	require.Equal(t, 3, jobs.StoredMessages)
+
+	news := got.Rules[1]
+	require.Equal(t, []string{"eml"}, news.Formats)
+	require.Equal(t, 1, news.StoredMessages)
+	require.Empty(t, news.DomainFiles, "this rule references no domain file")
+
+	// A rule with no `account:` applies to every configured account, and the
+	// resolved list says so rather than leaving the caller to infer it.
+	all := got.Rules[2]
+	require.Equal(t, "everything", all.Name)
+	require.Empty(t, all.Account)
+	require.Equal(t, []string{"personal", "work"}, all.Accounts)
+	require.Zero(t, all.StoredMessages)
+}
+
+// TestListRulesResolvesDomainFileLive is the point of the tool: an agent that
+// rewrote its wanted-senders file sees the new list on the very next call, with
+// no restart and no cache in between.
+func TestListRulesResolvesDomainFileLive(t *testing.T) {
+	f := newFixture(t)
+	s := f.server(nil)
+
+	// Before the file exists: an empty list and a note, never an error.
+	got, err := s.listRules()
+	require.NoError(t, err)
+	require.Len(t, got.Rules[0].DomainFiles, 1)
+
+	missing := got.Rules[0].DomainFiles[0]
+	require.Equal(t, f.domainFile, missing.Path)
+	require.False(t, missing.Exists)
+	require.NotNil(t, missing.Domains)
+	require.Empty(t, missing.Domains)
+	require.Zero(t, missing.Count)
+	require.Contains(t, missing.Note, "does not exist")
+
+	// The owning program writes the file.
+	require.NoError(t, os.WriteFile(f.domainFile, []byte(
+		"# senders I am waiting to hear from\n"+
+			"@Acme.example.\n"+
+			"beta.test\n"+
+			"acme.example\n"+ // duplicate, collapses
+			"\n"), 0o644))
+
+	got, err = s.listRules()
+	require.NoError(t, err)
+	resolved := got.Rules[0].DomainFiles[0]
+	require.True(t, resolved.Exists)
+	require.Equal(t, []string{"acme.example", "beta.test"}, resolved.Domains,
+		"normalized and de-duplicated exactly as the filter engine would")
+	require.Equal(t, 2, resolved.Count)
+	require.Empty(t, resolved.Note)
+	require.False(t, resolved.ModifiedAt.IsZero())
+
+	// And an edit is picked up immediately.
+	require.NoError(t, os.WriteFile(f.domainFile, []byte("newco.test\n"), 0o644))
+	got, err = s.listRules()
+	require.NoError(t, err)
+	require.Equal(t, []string{"newco.test"}, got.Rules[0].DomainFiles[0].Domains)
+
+	// An emptied file is still not an error.
+	require.NoError(t, os.WriteFile(f.domainFile, []byte("# nothing yet\n"), 0o644))
+	got, err = s.listRules()
+	require.NoError(t, err)
+	empty := got.Rules[0].DomainFiles[0]
+	require.True(t, empty.Exists)
+	require.Empty(t, empty.Domains)
+	require.Contains(t, empty.Note, "no usable domains")
+}
+
+// TestResolveDomainFileDirectory: a path that is a directory is a note, not a
+// crash.
+func TestResolveDomainFileDirectory(t *testing.T) {
+	dir := t.TempDir()
+	got := resolveDomainFile(dir)
+	require.False(t, got.Exists)
+	require.Empty(t, got.Domains)
+	require.Contains(t, got.Note, "directory")
+}
+
+// TestDomainFilePaths finds every `from_domains_file` wherever it sits in a
+// match tree, including under combinators, negation and YAML anchors.
+func TestDomainFilePaths(t *testing.T) {
+	var node yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte(`
+all:
+  - any:
+      - from_domains_file: /lists/wanted.txt
+      - from_domains: [acme.example]
+  - not:
+      from_domains_file: /lists/blocked.txt
+  - from_domains_file: /lists/wanted.txt
+`), &node))
+
+	require.Equal(t, []string{"/lists/wanted.txt", "/lists/blocked.txt"}, domainFilePaths(&node),
+		"in document order, without duplicates")
+
+	var none yaml.Node
+	require.NoError(t, yaml.Unmarshal([]byte("from_domains: [acme.example]\n"), &none))
+	require.Empty(t, domainFilePaths(&none))
+
+	require.Empty(t, domainFilePaths(nil))
+	require.Empty(t, domainFilePaths(&yaml.Node{}))
+}
+
+// TestDomainFilePathsSurvivesAliasCycle: a YAML alias can point backwards, so
+// the walk must terminate on a tree that refers to itself.
+func TestDomainFilePathsSurvivesAliasCycle(t *testing.T) {
+	inner := &yaml.Node{Kind: yaml.MappingNode}
+	alias := &yaml.Node{Kind: yaml.AliasNode, Alias: inner}
+	inner.Content = []*yaml.Node{
+		{Kind: yaml.ScalarNode, Value: "any"},
+		{Kind: yaml.SequenceNode, Content: []*yaml.Node{alias}},
+	}
+
+	done := make(chan []string, 1)
+	go func() { done <- domainFilePaths(inner) }()
+	select {
+	case got := <-done:
+		require.Empty(t, got)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the match-tree walk did not terminate")
+	}
+}
+
+// TestListRulesExposesNoSecrets: the tool names the dest and the agent's own
+// domain file, and nothing else about the configuration.
+func TestListRulesExposesNoSecrets(t *testing.T) {
+	f := newFixture(t)
+	require.NoError(t, os.WriteFile(f.domainFile, []byte("acme.example\n"), 0o644))
+
+	got, err := f.server(nil).listRules()
+	require.NoError(t, err)
+
+	blob := render(t, got)
+	require.Contains(t, blob, f.domainFile, "the agent's own list is exactly what it asked for")
+	require.Contains(t, blob, f.dest("job-search"))
+
+	for _, secret := range []string{
+		filepath.Join(f.root, "credentials.json"),
+		filepath.Join(f.root, "token.json"),
+		f.cfg.Path,
+		f.cfg.StateDir,
+		"gmail",
+		"initial_lookback",
+	} {
+		require.NotContains(t, blob, secret)
+	}
+}

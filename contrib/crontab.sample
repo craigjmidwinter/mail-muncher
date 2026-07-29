@@ -1,0 +1,39 @@
+# mail-muncher — sample crontab entry.
+#
+# Install with `crontab -e` and paste the line below, adjusting the three
+# absolute paths. Cron's environment is not your shell's: $PATH is minimal and
+# $HOME may be unset, so spell out the binary, the config and the log file in
+# full rather than relying on `mail-muncher` or `~` resolving.
+#
+# One cycle every ten minutes:
+
+*/10 * * * * /usr/local/bin/mail-muncher run --config /Users/YOUR-USERNAME/.config/mail-muncher/config.yml >> /Users/YOUR-USERNAME/.local/state/mail-muncher/cron.log 2>&1
+
+# Overlapping invocations are safe, and that is by design.
+#
+# Both `run` and `daemon` take the same lockfile — <state_dir>/mail-muncher.lock
+# — for the whole of each cycle. If a cycle is still going when the next one
+# fires (a big first sync, a slow network), the newcomer does not wait, does not
+# fetch, and above all does not write: it exits 3 immediately with "lock held by
+# another process". Nothing is fetched twice and no state file is corrupted by a
+# half-written cursor. Exit 3 in the log means "the previous one was still
+# going", not "something broke" — there is nothing to fix, and the next tick
+# will pick things up.
+#
+# The same lock is why you can run this crontab entry alongside
+# `mail-muncher daemon`, or on two machines sharing a state directory over a
+# network mount, without the two racing each other.
+#
+# Other exit statuses worth alerting on:
+#   1  config or validation error — the file will not load or a rule will not
+#      compile. It will fail identically every ten minutes until you fix it.
+#   2  provider or auth failure, typically an expired OAuth token. Run
+#      `mail-muncher auth` once, interactively, to refresh it.
+#
+# Prefer a long-running process to a cron entry? On macOS use the launchd agent
+# in ./launchd/ instead — it restarts on failure and survives logout.
+
+# Machine-readable output: add --json and send stdout somewhere an agent can
+# tail. Manifests go to stdout, logs to stderr, so the two never interleave:
+#
+# */10 * * * * /usr/local/bin/mail-muncher run --json --config /Users/YOUR-USERNAME/.config/mail-muncher/config.yml >> /Users/YOUR-USERNAME/.local/state/mail-muncher/manifests.ndjson 2>> /Users/YOUR-USERNAME/.local/state/mail-muncher/cron.log

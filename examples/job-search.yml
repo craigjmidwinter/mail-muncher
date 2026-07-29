@@ -1,0 +1,119 @@
+# mail-muncher — job-search archive
+#
+# The worked example of the general pattern: a separate program declares which
+# mail it wants by writing domains to a plain text file, and mail-muncher
+# delivers the matches to a directory as .eml + .md. Here that program is a
+# job-search tracker, and applying to a new company means one line appended to
+# its file — no config edit, no restart, no redeploy.
+#
+# Try it:
+#
+#   mail-muncher validate --config examples/job-search.yml
+#   mail-muncher auth     --config examples/job-search.yml --account personal
+#   mail-muncher run      --config examples/job-search.yml --dry-run
+#   mail-muncher run      --config examples/job-search.yml
+#
+# See docs/configuration.md for every key and docs/filters.md for the match
+# tree language.
+
+# Where sync cursors and the cycle lockfile live. One JSON file per account
+# (personal.json here) plus mail-muncher.lock. Created with mode 0700 on first
+# use; delete a state file to force a full re-scan.
+state_dir: ~/.local/state/mail-muncher
+
+accounts:
+  - # Referenced by `rules[].account` and used as the state file name.
+    name: personal
+
+    # "gmail" is the only provider implemented today, and is also the default
+    # when this key is omitted. IMAP is planned; see the README.
+    provider: gmail
+
+    gmail:
+      # The OAuth *client* JSON you download from the Google Cloud Console
+      # (Desktop app type). mail-muncher ships no OAuth client of its own.
+      # Walkthrough: docs/gmail-setup.md
+      credentials_file: ~/.config/mail-muncher/credentials.json
+
+      # Where `mail-muncher auth` caches the OAuth token, written 0600.
+      # This file does not exist until you run `auth` — `validate` reports a
+      # warning (not an error) until then.
+      token_file: ~/.config/mail-muncher/token.json
+
+      # Optional Gmail server-side pre-filter. It is a cost optimization for
+      # full scans only: incremental (history API) results are NOT filtered by
+      # it, and mail-muncher deliberately does not re-apply it locally. The
+      # rules below remain the only authority on what gets archived, so keep
+      # this broad or leave it out entirely.
+      query: "-in:chats -in:spam"
+
+      # How far back the first-ever scan reaches, as a Go duration. 2160h is
+      # 90 days: job-search mail is recent, and this keeps the first run from
+      # trawling a decade of mailbox. Ignored on every later run, which resume
+      # from the stored cursor. Default when omitted: 720h (30 days).
+      initial_lookback: 2160h
+
+# Rules are evaluated in config order against every fetched message, and the
+# FIRST match wins — a message is written by exactly one rule, or by none.
+# Put narrow rules above broad ones.
+rules:
+  - name: job-search
+
+    # Restrict this rule to one account. Omit to apply it to every account.
+    account: personal
+
+    # A match node is a mapping with exactly one key: a combinator
+    # (all / any / not) or a predicate. `any` here so the rule can grow more
+    # ways of recognising job-search mail without touching the domain file.
+    match:
+      any:
+        # The subscription interface. This file is owned by another program —
+        # the job-search tracker, or an agent. It is re-read at the start of
+        # every cycle (every `run`, every daemon tick), so appending a domain
+        # changes what gets delivered on the next cycle, with no config change
+        # and no restart.
+        #
+        # Format: one domain per line, `#` comments, blank lines ignored, a
+        # leading `@` and surrounding whitespace tolerated, case-insensitive.
+        # A missing or unreadable file matches nothing and logs one warning per
+        # cycle — it is never fatal, because the owning program may not have
+        # created it yet.
+        #
+        # Matching is equality-or-subdomain: `acme.com` also matches
+        # `careers.acme.com` and `mail.acme.com`.
+        - from_domains_file: ~/.local/share/jobsearch/domains.txt
+
+        # Applicant tracking systems send from their own domains, not the
+        # company's, so catch the big ones by name too.
+        - from_domains:
+            - greenhouse.io
+            - lever.co
+            - ashbyhq.com
+            - myworkday.com
+
+        # Belt and braces: anything that reads like an application ack, whoever
+        # it came from. RE2 syntax; `(?i)` makes it case-insensitive.
+        - subject_regex: "(?i)(your application|application received|interview)"
+
+    # Destination directory. Created on demand. Messages are filed underneath
+    # it as <dest>/<YYYY>/<MM>/<basename>.<ext> — see the README for the tree.
+    dest: ~/Mail/job-search
+
+    # `eml` is the byte-faithful RFC822 source (the fidelity copy; DKIM still
+    # verifies). `markdown` is the consumable rendering beside it: YAML
+    # frontmatter a program can parse, HTML converted to text, and attachments
+    # extracted to a sibling directory. Default when omitted: [eml].
+    formats: [eml, markdown]
+
+  # A second rule, to show ordering and account scoping. It has no `account:`,
+  # so it applies to every configured account. It only sees messages the
+  # job-search rule did not already claim.
+  - name: recruiter-spam
+    match:
+      all:
+        - subject_regex: "(?i)(exciting opportunity|reaching out|are you open to)"
+        # `not` inverts a single child node (not a list).
+        - not:
+            from_domains_file: ~/.local/share/jobsearch/domains.txt
+    dest: ~/Mail/recruiters
+    formats: [markdown]

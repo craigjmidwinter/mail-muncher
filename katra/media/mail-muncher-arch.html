@@ -1,0 +1,87 @@
+<style>
+  html,body{margin:0;padding:0}
+  body{background:#f7f6f2;color:#1a1a1a;font-family:ui-sans-serif,system-ui,sans-serif}
+  @media (prefers-color-scheme: dark){
+    body{background:#16181d;color:#e8e8e8}
+    .box{fill:#232730;stroke:#4a5160}
+    .seam{stroke:#8892a6}
+    .ext{fill:#2a2620;stroke:#6b5d3f}
+    .lbl{fill:#e8e8e8}
+    .sub{fill:#9aa3b2}
+    .arrow{stroke:#8892a6}
+    .ah{fill:#8892a6}
+    .future{stroke:#4a5160;fill:#1c1f26}
+  }
+  .box{fill:#ffffff;stroke:#b8bdc9}
+  .seam{stroke:#5b6575}
+  .ext{fill:#fdf6e3;stroke:#c9b57a}
+  .lbl{fill:#1a1a1a;font-size:13px;font-weight:600}
+  .sub{fill:#6b7280;font-size:11px}
+  .arrow{stroke:#5b6575;fill:none;stroke-width:1.5}
+  .ah{fill:#5b6575}
+  .future{stroke:#b8bdc9;fill:#fafafa;stroke-dasharray:5 4}
+</style>
+<svg viewBox="0 0 860 440" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="mail-muncher architecture">
+  <defs>
+    <marker id="m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" class="ah"/>
+    </marker>
+  </defs>
+
+  <!-- Providers -->
+  <rect x="20" y="60" width="150" height="70" rx="8" class="box"/>
+  <text x="95" y="88" text-anchor="middle" class="lbl">Gmail</text>
+  <text x="95" y="106" text-anchor="middle" class="sub">OAuth · history sync · RAW</text>
+
+  <rect x="20" y="150" width="150" height="70" rx="8" class="future"/>
+  <text x="95" y="178" text-anchor="middle" class="lbl">IMAP</text>
+  <text x="95" y="196" text-anchor="middle" class="sub">later — same seam</text>
+
+  <!-- Provider seam -->
+  <line x1="205" y1="40" x2="205" y2="250" class="seam" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="205" y="28" text-anchor="middle" class="sub">Provider interface</text>
+
+  <path d="M170,95 L240,132" class="arrow" marker-end="url(#m)"/>
+  <path d="M170,185 L240,150" class="arrow" marker-end="url(#m)"/>
+
+  <!-- Parse -->
+  <rect x="240" y="105" width="130" height="70" rx="8" class="box"/>
+  <text x="305" y="133" text-anchor="middle" class="lbl">Parse</text>
+  <text x="305" y="151" text-anchor="middle" class="sub">raw RFC822 → Message</text>
+
+  <path d="M370,140 L430,140" class="arrow" marker-end="url(#m)"/>
+
+  <!-- Filter engine -->
+  <rect x="430" y="90" width="170" height="100" rx="8" class="box"/>
+  <text x="515" y="120" text-anchor="middle" class="lbl">Filter engine</text>
+  <text x="515" y="140" text-anchor="middle" class="sub">ordered rules · all/any/not</text>
+  <text x="515" y="157" text-anchor="middle" class="sub">first match wins</text>
+
+  <!-- external domains file -->
+  <rect x="410" y="270" width="210" height="66" rx="8" class="ext"/>
+  <text x="515" y="296" text-anchor="middle" class="lbl">domains.txt</text>
+  <text x="515" y="314" text-anchor="middle" class="sub">owned by job-search app · reloaded every cycle</text>
+  <path d="M515,270 L515,195" class="arrow" marker-end="url(#m)" stroke-dasharray="4 4"/>
+
+  <path d="M600,140 L660,140" class="arrow" marker-end="url(#m)"/>
+
+  <!-- Sinks -->
+  <rect x="660" y="70" width="180" height="62" rx="8" class="box"/>
+  <text x="750" y="96" text-anchor="middle" class="lbl">.eml sink</text>
+  <text x="750" y="114" text-anchor="middle" class="sub">byte-faithful · dest/YYYY/MM</text>
+
+  <rect x="660" y="150" width="180" height="62" rx="8" class="box"/>
+  <text x="750" y="176" text-anchor="middle" class="lbl">markdown sink</text>
+  <text x="750" y="194" text-anchor="middle" class="sub">optional · frontmatter + body</text>
+
+  <path d="M660,101 L620,120" class="arrow" marker-end="url(#m)" transform="translate(40,0) scale(-1,1) translate(-1280,0)" visibility="hidden"/>
+
+  <!-- state store -->
+  <rect x="120" y="270" width="220" height="66" rx="8" class="box"/>
+  <text x="230" y="296" text-anchor="middle" class="lbl">state store</text>
+  <text x="230" y="314" text-anchor="middle" class="sub">historyId · seen ids · per account</text>
+  <path d="M230,270 C230,220 205,200 205,160" class="arrow" marker-end="url(#m)" stroke-dasharray="4 4"/>
+
+  <!-- run modes footer -->
+  <text x="430" y="400" text-anchor="middle" class="sub">run (one-shot, cron) · daemon --interval 5m · --dry-run — single binary, lockfile-guarded</text>
+</svg>

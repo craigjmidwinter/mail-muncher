@@ -1,0 +1,26 @@
+Message-ID: <alt-002@recruiting.example>
+Date: Mon, 27 Jul 2026 18:04:11 -0400
+From: "Recruiting Bot" <no-reply@jobs.Recruiting.Example>
+To: craig@example.org
+Subject: Your application was received
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="ALTBOUNDARY"
+
+This is a multi-part message in MIME format.
+
+--ALTBOUNDARY
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Thanks for applying to Recruiting Example.
+
+We will be in touch.
+
+--ALTBOUNDARY
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><body><p>Thanks for applying to <b>Recruiting Example</b>.</p>
+<p>We will be in touch.</p></body></html>
+
+--ALTBOUNDARY--

@@ -1,0 +1,37 @@
+# Example mail-muncher config, exercised by the unit tests and by
+#
+#   mail-muncher validate --config internal/config/testdata/config.yml
+#
+# The files it points at (OAuth credentials, the OAuth token, the
+# externally-maintained domain list) deliberately do not exist in the repo, so
+# validating this file reports WARNINGS and exits 0.
+
+state_dir: ~/.local/state/mail-muncher
+
+accounts:
+  - name: personal
+    provider: gmail
+    gmail:
+      credentials_file: ~/.config/mail-muncher/credentials.json
+      token_file: ~/.config/mail-muncher/token.json
+      query: "-in:chats"
+      initial_lookback: 720h
+
+rules:
+  # Ordered; first match wins.
+  - name: job-search
+    account: personal
+    match:
+      any:
+        - from_domains_file: ~/.local/share/jobsearch/domains.txt
+        - subject_regex: "(?i)your application"
+    dest: ~/Mail/job-search
+    formats: [eml, markdown]
+
+  - name: receipts
+    match:
+      all:
+        - from_domains: [stripe.com, squareup.com]
+        - has_attachment: true
+    dest: ~/Mail/receipts
+    formats: [eml]

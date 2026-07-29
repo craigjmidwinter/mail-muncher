@@ -1,0 +1,19 @@
+# The smallest mail-muncher config that does something useful.
+#
+#   mail-muncher validate --config examples/minimal.yml
+#   mail-muncher auth     --config examples/minimal.yml
+#   mail-muncher run      --config examples/minimal.yml --dry-run
+#
+# `state_dir` is omitted, so it defaults to ~/.local/state/mail-muncher.
+
+accounts:
+  - name: personal
+    gmail:
+      credentials_file: ~/.config/mail-muncher/credentials.json
+      token_file: ~/.config/mail-muncher/token.json
+
+rules:
+  - name: receipts
+    match:
+      from_domains: [stripe.com, squareup.com]
+    dest: ~/Mail/receipts

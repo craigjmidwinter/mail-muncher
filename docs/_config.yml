@@ -1,0 +1,104 @@
+# Jekyll configuration for the mail-muncher documentation site.
+#
+# Served by GitHub Pages from the /docs directory on the default branch:
+#   https://craigmidwinter.github.io/mail-muncher/
+#
+# This is a project page, so `url` is the user domain and `baseurl` is the
+# repository name. Getting `baseurl` wrong breaks every link on the site.
+
+title: mail-muncher
+description: >-
+  An email client for AI agents. mail-muncher pulls Gmail with a read-only
+  scope, filters it with ordered composable rules, and delivers the matches to
+  disk as byte-faithful .eml plus markdown with YAML frontmatter — with a stdio
+  MCP server over the archive.
+url: "https://craigmidwinter.github.io"
+baseurl: "/mail-muncher"
+
+repository: craigmidwinter/mail-muncher
+lang: en_US
+
+# Theme. `remote_theme` is supported by the plain GitHub Pages build, so no
+# custom Actions workflow is needed. Pinned to a tag so an upstream release
+# cannot change the site without a commit here.
+remote_theme: just-the-docs/just-the-docs@v0.12.0
+
+# jekyll-include-cache is required by just-the-docs and must be declared
+# explicitly when the theme is loaded remotely. jekyll-seo-tag emits <title>,
+# meta description, canonical URL and Open Graph tags; jekyll-sitemap emits
+# sitemap.xml. Both are supported natively by GitHub Pages.
+plugins:
+  - jekyll-include-cache
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# GitHub Pages also always enables jekyll-optional-front-matter,
+# jekyll-titles-from-headings and jekyll-relative-links, which is what lets the
+# reference pages render and cross-link without hand-written front matter.
+relative_links:
+  enabled: true
+  collections: false
+
+titles_from_headings:
+  enabled: true
+  strip_title: true
+  collections: false
+
+# Every page gets the theme's default layout, so a page that arrives without
+# front matter still renders inside the site chrome.
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+# --- just-the-docs options -------------------------------------------------
+
+search_enabled: true
+search:
+  heading_level: 2
+  previews: 2
+  preview_words_before: 5
+  preview_words_after: 10
+  tokenizer_separator: /[\s/]+/
+  rel_url: true
+  button: false
+
+heading_anchors: true
+color_scheme: light
+
+aux_links:
+  "GitHub":
+    - "https://github.com/craigmidwinter/mail-muncher"
+aux_links_new_tab: true
+
+back_to_top: true
+back_to_top_text: "Back to top"
+
+footer_content: >-
+  mail-muncher is MIT licensed. It requests exactly one OAuth scope,
+  gmail.readonly.
+
+nav_external_links:
+  - title: mail-muncher on GitHub
+    url: https://github.com/craigmidwinter/mail-muncher
+
+# --- SEO -------------------------------------------------------------------
+
+author: Craig Midwinter
+
+social:
+  name: mail-muncher
+  links:
+    - https://github.com/craigmidwinter/mail-muncher
+
+twitter:
+  card: summary
+
+# --- Build -----------------------------------------------------------------
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor
+  - .jekyll-cache

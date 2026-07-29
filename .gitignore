@@ -1,0 +1,27 @@
+# Built binary
+/mail-muncher
+/dist/
+
+# Go build/test artifacts
+*.test
+*.out
+coverage.*
+
+# Local scratch / working files
+/tmp/
+/scratch/
+/.scratch/
+*.local
+*.local.*
+config.local.yml
+
+# Local credentials and state (never commit)
+/token.json
+/credentials.json
+/state/
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp

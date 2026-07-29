@@ -1,0 +1,20 @@
+Return-Path: <jane@acme.example>
+Delivered-To: craig@example.org
+Message-ID: <plain-001@acme.example>
+Date: Tue, 28 Jul 2026 09:15:00 +0000
+From: Jane Doe <jane@Acme.Example>
+To: Craig Midwinter <craig@example.org>
+Cc: Team <team@ACME.example>, bare@sub.acme.example
+Subject: Quarterly update
+X-Mailer: hand-written
+X-Campaign-Id: spring-2026
+X-Campaign-Id: rerun-2026
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hello Craig,
+
+Just checking in on the quarterly numbers.
+
+-- Jane
