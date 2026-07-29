@@ -1,7 +1,10 @@
 ---
 subject: 'Re: Your application for Senior Engineer'
 from: Jane Doe <jane@acme.com>
+from_address: jane@acme.com
+from_addresses: [jane@acme.com]
 to: [me@example.com]
+to_addresses: [me@example.com]
 date: 2026-07-28T09:15:00Z
 message_id: <abc123@acme.com>
 thread_id: 18fe9c0d1a2b3c4d

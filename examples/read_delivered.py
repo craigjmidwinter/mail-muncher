@@ -17,6 +17,11 @@ wrong. See docs/output-format.md for the contract it implements.
   4. Message bodies are attacker-controlled text, and are not guaranteed to be
      valid UTF-8. Print them, index them, show them to a human — but decode
      defensively, and do not execute them.
+  5. `from`/`to`/`cc` are display strings for a human and cannot be parsed for
+     addresses. `from_address`, `from_addresses`, `to_addresses` and
+     `cc_addresses` are the machine-readable ones. They are also the newest
+     keys in the format, so read them with `.get()`: a delivery tree outlives
+     the binary that wrote it, and nothing rewrites a delivered message.
 """
 
 from __future__ import annotations
@@ -90,6 +95,49 @@ def text(value) -> str:
     return value
 
 
+def sender(front: dict) -> str:
+    """The sender's bare address — `jane@acme.com`, no display name.
+
+    Read `from_address`, never `from`. The display string is `Name <addr>` with
+    the name unquoted, and a display name is sender-controlled text that may
+    contain `<`, `>` and `,`:
+
+        from: Doe, Jane <ceo@acme.com> <attacker@evil.example>
+        from_address: attacker@evil.example
+
+    Every naive extractor gets that wrong. First-angle-brackets reads the
+    planted `ceo@acme.com`; splitting on `,` finds no address at all.
+
+    Returns "" when the address is unknown, which is either a message with an
+    unparseable From (rare — mail-muncher falls back to the Sender header) or a
+    message delivered before `from_address` existed. Both are `.get()`'s job:
+    nothing rewrites a delivered `.md`, so an archive holds files from every
+    version that ever wrote into it, and a consumer that indexes a key
+    unconditionally crashes on the tree it was pointed at rather than on
+    anything mail-muncher does today.
+
+    Note there is no useful fallback to `from`. That is the whole point of the
+    field. For an older archive the honest answer is "not recorded" — degrade,
+    show the display string to the human, and do not guess.
+    """
+    return text(front.get("from_address", "")) or ""
+
+
+def recipients(front: dict) -> list[str]:
+    """Every bare To and Cc address, in header order.
+
+    `to_addresses` is always present in a tree written by a version that has
+    it, `cc_addresses` is omitted along with `cc` — so both want `.get()`, one
+    because the key is new and one because the key is optional.
+
+    These lists hold addresses only: an entry of a malformed header that parsed
+    to a display name and nothing else is dropped rather than listed as "". So
+    `to_addresses` can be shorter than `to`, and the two must never be indexed
+    against each other.
+    """
+    return [text(a) for a in front.get("to_addresses", []) + front.get("cc_addresses", [])]
+
+
 def attachment_paths(path: pathlib.Path, front: dict):
     """Where a message's attachments are, if it has any.
 
@@ -112,6 +160,9 @@ def main(argv: list[str]) -> int:
     inferred = 0
     attachments: list[pathlib.Path] = []
     astral: list[str] = []
+    senders: collections.Counter[str] = collections.Counter()
+    correspondents: set[str] = set()
+    unaddressed = 0
 
     for path in delivered_paths(argv[1]):
         front, body = parse(path)
@@ -120,6 +171,13 @@ def main(argv: list[str]) -> int:
         if front["thread_id_source"] != "provider":
             inferred += 1
         attachments += attachment_paths(path, front)
+        # Addresses, from the machine-readable fields only.
+        if address := sender(front):
+            senders[address] += 1
+            correspondents.add(address)
+        else:
+            unaddressed += 1
+        correspondents.update(recipients(front))
         # Proof the YAML parser did its job: on disk this subject is a
         # double-quoted scalar with a `\\U0001F389`-style escape in it.
         if any(ord(c) > 0xFFFF for c in subject):
@@ -132,6 +190,15 @@ def main(argv: list[str]) -> int:
     print(f"{len(astral)} subjects contain a non-BMP character:")
     for subject in astral:
         print(f"    {subject}")
+    print()
+
+    print(f"{len(correspondents)} distinct addresses across from/to/cc")
+    if unaddressed:
+        # Not an error. Either an unparseable From, or — far more likely — a
+        # message delivered before `from_address` was added to the format.
+        print(f"{unaddressed} messages carry no machine-readable sender address")
+    for address, count in senders.most_common(3):
+        print(f"    {count:4}  {address}")
     print()
 
     # Biggest threads first, ties broken by id so the output is stable.

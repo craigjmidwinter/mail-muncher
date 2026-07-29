@@ -147,6 +147,24 @@ func (m *Message) FromAddresses() []string {
 	return addressStrings(m.From)
 }
 
+// ToAddresses returns the bare addr-spec of each To address (no display name),
+// as written in the header.
+func (m *Message) ToAddresses() []string {
+	if m == nil {
+		return nil
+	}
+	return addressStrings(m.To)
+}
+
+// CcAddresses returns the bare addr-spec of each Cc address (no display name),
+// as written in the header. Nil when the message was not copied to anyone.
+func (m *Message) CcAddresses() []string {
+	if m == nil {
+		return nil
+	}
+	return addressStrings(m.Cc)
+}
+
 // Recipients returns To followed by Cc, as a single slice.
 func (m *Message) Recipients() []mail.Address {
 	if m == nil {

@@ -43,7 +43,7 @@ It is the part that is not obvious and the part that is exploitable.
             └── R-sum-2026.docx                     <- SENDER-CONTROLLED
 ```
 
-Four rules that cover most of the mistakes:
+Five rules that cover most of the mistakes:
 
 1. Delivered messages are exactly `<dest>/<YYYY>/<MM>/*.md` and
    `<dest>/<YYYY>/<MM>/*.eml` — two directory levels below `dest`, and no
@@ -51,7 +51,10 @@ Four rules that cover most of the mistakes:
 2. Parse the frontmatter with a **real YAML parser**. It is YAML, and it uses
    the parts of YAML you did not expect.
 3. Group by `thread_id`. It is always present and never empty.
-4. Everything in the frontmatter and the body came from a stranger.
+4. For addresses read `from_address`, `from_addresses`, `to_addresses` and
+   `cc_addresses`. `from`, `to` and `cc` are display strings and **cannot** be
+   parsed back into addresses.
+5. Everything in the frontmatter and the body came from a stranger.
 
 ## Directory layout
 
@@ -197,8 +200,12 @@ against the wrong thing.
 | --- | --- | --- |
 | `subject` | string | **yes** (`""` when the message had none) |
 | `from` | string | **yes** (`""` when unparseable) |
+| `from_address` | string | **yes** (`""` when there is no address) |
+| `from_addresses` | list of strings | **yes** (`[]` when there is no address) |
 | `to` | list of strings | **yes** (`[]` when empty) |
+| `to_addresses` | list of strings | **yes** (`[]` when empty) |
 | `cc` | list of strings | omitted when empty |
+| `cc_addresses` | list of strings | omitted when `cc` is |
 | `date` | timestamp | **yes** |
 | `message_id` | string | **yes** |
 | `thread_id` | string | **yes**, and never empty |
@@ -209,13 +216,14 @@ against the wrong thing.
 | `labels` | list of strings | omitted when empty |
 | `attachments` | list of strings | omitted when empty |
 
-Exactly four keys are `omitempty`: **`cc`, `in_reply_to`, `labels`,
-`attachments`**. Everything else is always emitted, including as an empty
-string or empty list. Code the four as optional and the rest as required.
+Exactly five keys are `omitempty`: **`cc`, `cc_addresses`, `in_reply_to`,
+`labels`, `attachments`**. Everything else is always emitted, including as an
+empty string or empty list. Code the five as optional and the rest as required.
 
 Note the asymmetry: `to` is always present and can be `[]`; `cc` is absent
 rather than `[]`. That is not a bug, and it is why `front.get("cc", [])` is the
-right idiom and `front["cc"]` is not.
+right idiom and `front["cc"]` is not. `cc_addresses` follows `cc` exactly: a
+message with no Cc has neither key.
 
 There is no `references` key. The chain is unbounded and the `.eml` beside the
 file has it verbatim.
@@ -226,8 +234,12 @@ A complete example, from the real archive:
 ---
 subject: '[craigjmidwinter/home-assistant] Run failed: Lock - dev (68ca0a0)'
 from: Craig J. Midwinter <notifications@github.com>
+from_address: notifications@github.com
+from_addresses: [notifications@github.com]
 to: [craigjmidwinter/home-assistant <home-assistant@noreply.github.com>]
+to_addresses: [home-assistant@noreply.github.com]
 cc: [Ci activity <ci_activity@noreply.github.com>]
+cc_addresses: [ci_activity@noreply.github.com]
 date: 2026-07-27T07:17:31Z
 message_id: <craigjmidwinter/home-assistant/check-suites/CS_kwDOBIEQZs8AAAATFPoojA/1785136631@github.com>
 thread_id: 19f8e321b82bf2a7
@@ -333,22 +345,89 @@ number; code against "there is no limit".
 
 ## Field semantics
 
-### `from`, `to`, `cc` are display strings, not addresses
+### Addresses come in two forms: display and machine-readable
+
+Every address header is carried twice. `from`, `to` and `cc` are for a human;
+`from_address`, `from_addresses`, `to_addresses` and `cc_addresses` are for a
+program.
 
 ```yaml
 from: Jane Doe <jane@acme.com>
+from_address: jane@acme.com
+from_addresses: [jane@acme.com]
 to: [craigjmidwinter/home-assistant <home-assistant@noreply.github.com>]
+to_addresses: [home-assistant@noreply.github.com]
+cc: [Ci activity <ci_activity@noreply.github.com>]
+cc_addresses: [ci_activity@noreply.github.com]
 ```
 
-The rendering is `Name <addr>`, or the bare `addr` when there is no display
-name, or the bare name when there is no address. The display name is **not**
-quoted the way an RFC 5322 header would quote it, because nothing re-parses
-this file. If you need addresses, either extract what is between the last
-`< >` or parse the `.eml`.
+**If you need an address, read the machine-readable field.** Do not parse the
+display string — see below for why it cannot be done correctly.
 
-`from` is a single string with multiple addresses joined by `, `. `to` and `cc`
-are lists with one address per element. Newlines in a display name are folded
-to spaces, so an injected CRLF cannot spill out of its value.
+#### The machine-readable fields
+
+| Key | What it is |
+| --- | --- |
+| `from_address` | The sender's bare addr-spec. **This is the one a consumer usually wants.** |
+| `from_addresses` | Every From addr-spec, in header order. |
+| `to_addresses` | Every To addr-spec, in header order. |
+| `cc_addresses` | Every Cc addr-spec, in header order. |
+
+Guarantees:
+
+- **Bare addr-specs only.** `jane@acme.com` — never a display name, never angle
+  brackets, never a comma-joined list in one string. A value is exactly one
+  address, and it contains no character that would need escaping, so these
+  fields are always plain YAML scalars.
+- **Verbatim.** Nothing is lowercased, trimmed, or otherwise normalized. The
+  local part of an addr-spec is case-sensitive in principle, so
+  `Jane.Doe@Acme.Example` is emitted exactly that way. Fold case yourself if
+  your join needs it — you cannot recover what was folded away.
+- **Addresses only.** A malformed header can parse to a display name with no
+  address at all; such an entry is dropped rather than listed as `""`. So
+  `to_addresses` can be **shorter than** `to`, and the two must not be indexed
+  against each other. Every element of a `*_addresses` list is a non-empty
+  address.
+- **Ordering.** Header order, preserved.
+
+**Cardinality of `from`.** RFC 5322 permits more than one From address, and it
+does occur. `from_address` is the **first** `from_addresses` element, and it is
+always present as a key — `""` only when the header carried no address at all,
+which is rare: when a message has no `From` at all, mail-muncher falls back to
+the `Sender` header, so a primary address is essentially always available. The
+other authors are not silently dropped; they are in `from_addresses`. If
+authorship matters to your consumer, read the list and branch on its length. If
+it does not, read `from_address` and move on.
+
+#### The display fields cannot be parsed for addresses
+
+The rendering is `Name <addr>`, or the bare `addr` when there is no display
+name, or the bare name when there is no address. `from` is a single string with
+multiple addresses joined by `, `; `to` and `cc` are lists with one address per
+element. Newlines in a display name are folded to spaces, so an injected CRLF
+cannot spill out of its value.
+
+The display name is **not** quoted the way an RFC 5322 header would quote it,
+because nothing re-parses this file. The display name is also sender-controlled
+text that may contain `<`, `>` and `,`. Together those two facts mean the
+display string is **ambiguous**, and every naive extractor reads an
+attacker-chosen address out of it:
+
+```yaml
+from: Doe, Jane <ceo@acme.com> <attacker@evil.example>
+from_address: attacker@evil.example
+to: ['Ops <ops@acme.com>, Security <sec@acme.com> <me@example.com>']
+to_addresses: [me@example.com]
+```
+
+That message was sent by `attacker@evil.example` to one recipient. But
+"take what is between the first `< >`" reads `ceo@acme.com`, "split on `,`"
+finds no address at all, and counting `<` in the `to` element suggests three
+recipients where there is one. Taking the **last** `< >` happens to survive
+this example and fails on a display name ending in `>`.
+
+There is no correct way to do it, which is what the `*_address(es)` fields are
+for. The `.eml` is still there if you need the raw header.
 
 ### `message_id` and `in_reply_to` include the angle brackets
 
@@ -570,7 +649,8 @@ For an agent consuming this archive:
 [`examples/read_delivered.py`][example] is a short, correct, dependency-light
 Python reader. It is documentation: it demonstrates the two-level glob, a real
 YAML parser, byte-safe reading, `!!binary` coercion, grouping by `thread_id`,
-and treating attachments as opaque.
+reading addresses from the machine-readable fields (and degrading when an older
+archive does not have them), and treating attachments as opaque.
 
 [example]: https://github.com/craigjmidwinter/mail-muncher/blob/main/examples/read_delivered.py
 
@@ -588,6 +668,9 @@ python3 examples/read_delivered.py ~/Mail/job-search
     Smart, Funny Podcasts for Quiet Time 🎧
     🚨 Last Chance: Activate your Triangle Rewards offers
     ...
+
+0 distinct addresses across from/to/cc
+186 messages carry no machine-readable sender address
 
 19f8e321b82bf2a7  37 msg  (provider)
   2026-07-26 05:11  Craig J. Midwinter <notifications@github.com>
@@ -617,7 +700,13 @@ threads = {}
 for path in delivered("~/Mail/job-search"):
     front, body = parse(path)
     threads.setdefault(front["thread_id"], []).append((front, body))
+    address = front.get("from_address", "")   # "" on a pre-from_address archive
 ```
+
+That last line is what the two zeroes in the sample output above are: the real
+186-message archive was delivered before `from_address` existed, and nothing
+rewrites a delivered message. The reader reports it and carries on. Yours
+should too — see [Stability](#stability).
 
 ## Stability
 
@@ -630,3 +719,15 @@ Two forward-compatibility rules for a consumer:
 - **Ignore unknown frontmatter keys.** New keys may be added.
 - **Treat `thread_id_source` as an open enum.** New sources may be added as
   more providers land; anything that is not `provider` is best-effort.
+
+And one backward-compatibility rule, because a delivery tree outlives the
+binary that wrote it:
+
+- **A key is only in files written after it existed.** mail-muncher never
+  rewrites a delivered message, so an archive is a record of every version that
+  ever wrote into it. `from_address`, `from_addresses`, `to_addresses` and
+  `cc_addresses` are the newest keys and are absent from anything delivered
+  before them. A consumer that reads an existing archive should use `.get()`
+  and fall back to the display field, exactly as
+  [`read_delivered.py`][example] does — the alternative is a `KeyError` on
+  every message a previous version delivered.

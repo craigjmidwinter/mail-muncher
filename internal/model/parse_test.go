@@ -68,6 +68,12 @@ func TestParsePlainTextHelpers(t *testing.T) {
 		msg.RecipientAddresses())
 	assert.Len(t, msg.Recipients(), 3)
 
+	// To and Cc separately, for consumers that need to tell them apart. Case is
+	// preserved: the local part of an addr-spec is case-sensitive in principle.
+	assert.Equal(t, []string{"craig@example.org"}, msg.ToAddresses())
+	assert.Equal(t, []string{"team@ACME.example", "bare@sub.acme.example"}, msg.CcAddresses())
+	assert.Equal(t, append(msg.ToAddresses(), msg.CcAddresses()...), msg.RecipientAddresses())
+
 	assert.True(t, msg.HasLabel("INBOX"))
 	assert.False(t, msg.HasLabel("inbox"), "label matching is exact")
 	assert.False(t, msg.HasLabel("SPAM"))
@@ -251,6 +257,8 @@ func TestNilMessageHelpersAreSafe(t *testing.T) {
 	assert.NotPanics(t, func() {
 		assert.Nil(t, msg.FromDomains())
 		assert.Nil(t, msg.FromAddresses())
+		assert.Nil(t, msg.ToAddresses())
+		assert.Nil(t, msg.CcAddresses())
 		assert.Nil(t, msg.Recipients())
 		assert.Nil(t, msg.RecipientAddresses())
 		assert.Nil(t, msg.AttachmentFilenames())

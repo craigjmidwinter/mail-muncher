@@ -3,6 +3,7 @@ package sink
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"net/mail"
 	"os"
 	"path/filepath"
@@ -224,8 +225,12 @@ func TestMarkdownFrontmatterFields(t *testing.T) {
 	fm := parseFrontmatter(t, got)
 
 	assert.Equal(t, "Jane Doe <jane@acme.com>", fm["from"])
+	assert.Equal(t, "jane@acme.com", fm["from_address"])
+	assert.Equal(t, []any{"jane@acme.com"}, fm["from_addresses"])
 	assert.Equal(t, []any{"me@example.com"}, fm["to"])
+	assert.Equal(t, []any{"me@example.com"}, fm["to_addresses"])
 	assert.Equal(t, []any{"Recruiting Team <recruiting@acme.com>"}, fm["cc"])
+	assert.Equal(t, []any{"recruiting@acme.com"}, fm["cc_addresses"])
 	assert.Equal(t, "<abc123@acme.com>", fm["message_id"], "angle brackets are kept")
 	assert.Equal(t, "18fe9c0d1a2b3c4d", fm["thread_id"], "the join key a consumer groups on")
 	assert.Equal(t, "provider", fm["thread_id_source"])
@@ -282,12 +287,173 @@ func TestMarkdownFrontmatterOmitsEmptyOptionalFields(t *testing.T) {
 	front := got[:strings.Index(got, "\n---\n")]
 
 	assert.NotContains(t, front, "cc:")
+	assert.NotContains(t, front, "cc_addresses:", "the machine-readable cc is omitted with its display counterpart")
 	assert.NotContains(t, front, "labels:")
 	assert.NotContains(t, front, "attachments:")
 	assert.NotContains(t, front, "in_reply_to:", "a thread-opening message names no parent")
 	assert.Contains(t, front, "to: [", "to is always present, as a flow sequence")
+	assert.Contains(t, front, "to_addresses: [", "and so is its machine-readable counterpart")
+	assert.Contains(t, front, "from_address: ")
+	assert.Contains(t, front, "from_addresses: [")
 	assert.Contains(t, front, "thread_id:", "thread_id is always present — it is the join key")
 	assert.Contains(t, front, "thread_id_source:")
+}
+
+// TestMarkdownFrontmatterAddressesSurviveHostileDisplayName is the reason the
+// `*_address(es)` keys exist at all.
+//
+// The display fields render `Name <addr>` without RFC 5322 quoting, because
+// nothing re-parses this file. A display name is sender-controlled text, and
+// nothing stops it containing `<`, `>` and `,` — so "take what is between the
+// last angle brackets" and "split on comma" both read an attacker-chosen
+// address out of `from`, and a `to` element can carry two of them. The
+// machine-readable fields carry the addr-spec the MIME parser actually
+// resolved, and have no such reading.
+func TestMarkdownFrontmatterAddressesSurviveHostileDisplayName(t *testing.T) {
+	msg := testMessage()
+	msg.From = []mail.Address{{Name: `Doe, Jane <ceo@acme.com>`, Address: "attacker@evil.example"}}
+	msg.To = []mail.Address{{Name: `Ops <ops@acme.com>, Security <sec@acme.com>`, Address: "me@example.com"}}
+	msg.Cc = []mail.Address{{Name: `<billing@acme.com>`, Address: "cc@example.com"}}
+
+	_, got := storeMarkdown(t, msg)
+	assertGolden(t, "addresses-hostile-display-name", got)
+	fm := parseFrontmatter(t, got)
+
+	// The display string really is ambiguous: the naive extractors get the
+	// address the sender planted, not the one the message came from.
+	display := fm["from"].(string)
+	assert.Equal(t, `Doe, Jane <ceo@acme.com> <attacker@evil.example>`, display)
+	assert.Equal(t, "ceo@acme.com",
+		display[strings.Index(display, "<")+1:strings.Index(display, ">")],
+		"first-angle-brackets extraction reads the planted address")
+	assert.Equal(t, "Doe", strings.SplitN(display, ",", 2)[0],
+		"comma splitting does not even find an address")
+
+	// The machine-readable fields have exactly one reading.
+	assert.Equal(t, "attacker@evil.example", fm["from_address"])
+	assert.Equal(t, []any{"attacker@evil.example"}, fm["from_addresses"])
+	assert.Equal(t, []any{"me@example.com"}, fm["to_addresses"],
+		"one recipient, not the three the display name suggests")
+	assert.Equal(t, []any{"cc@example.com"}, fm["cc_addresses"])
+
+	// And they are plain YAML scalars. An addr-spec contains nothing that
+	// makes go-yaml quote, `\U`-escape or fold a value into a block scalar, so
+	// these lines look the same in the file as they do through a parser.
+	for _, line := range []string{
+		"\nfrom_address: attacker@evil.example\n",
+		"\nfrom_addresses: [attacker@evil.example]\n",
+		"\nto_addresses: [me@example.com]\n",
+		"\ncc_addresses: [cc@example.com]\n",
+	} {
+		assert.Contains(t, got, line)
+	}
+
+	// And nothing the display name planted leaks into them.
+	for _, planted := range []string{"ceo@acme.com", "ops@acme.com", "sec@acme.com", "billing@acme.com"} {
+		for _, key := range []string{"from_address", "from_addresses", "to_addresses", "cc_addresses"} {
+			assert.NotContains(t, fmt.Sprint(fm[key]), planted, "%s must not carry %s", key, planted)
+		}
+	}
+}
+
+// TestMarkdownFrontmatterMultipleFrom: a message with more than one author is
+// legal, and the primary address is not allowed to be the whole story.
+// `from_address` names the first, `from_addresses` keeps all of them.
+func TestMarkdownFrontmatterMultipleFrom(t *testing.T) {
+	msg := testMessage()
+	msg.From = []mail.Address{
+		{Name: "Jane Doe", Address: "jane@acme.com"},
+		{Name: "John Roe", Address: "john@acme.com"},
+	}
+
+	_, got := storeMarkdown(t, msg)
+	fm := parseFrontmatter(t, got)
+
+	assert.Equal(t, "Jane Doe <jane@acme.com>, John Roe <john@acme.com>", fm["from"])
+	assert.Equal(t, "jane@acme.com", fm["from_address"], "the primary is the first, documented as such")
+	assert.Equal(t, []any{"jane@acme.com", "john@acme.com"}, fm["from_addresses"],
+		"the second author is not dropped")
+}
+
+// TestMarkdownFrontmatterAddressesAreVerbatim: the local part of an addr-spec
+// is case-sensitive in principle, so nothing here folds case. A consumer that
+// wants to compare case-insensitively can; one that needs what the sender
+// wrote could not get it back.
+func TestMarkdownFrontmatterAddressesAreVerbatim(t *testing.T) {
+	msg := testMessage()
+	msg.From = []mail.Address{{Name: "Jane Doe", Address: "Jane.Doe@Acme.Example"}}
+	msg.To = []mail.Address{{Address: "Me+Tag@Example.COM"}}
+
+	_, got := storeMarkdown(t, msg)
+	fm := parseFrontmatter(t, got)
+
+	assert.Equal(t, "Jane.Doe@Acme.Example", fm["from_address"])
+	assert.Equal(t, []any{"Me+Tag@Example.COM"}, fm["to_addresses"])
+}
+
+// TestMarkdownFrontmatterAddressWithoutAddrSpec: a malformed header can parse
+// to a display name and nothing else. An empty string is not an address, so it
+// is dropped rather than listed — which means these lists can be shorter than
+// their display counterparts and must not be indexed against them.
+func TestMarkdownFrontmatterAddressWithoutAddrSpec(t *testing.T) {
+	msg := testMessage()
+	msg.From = []mail.Address{{Name: "undisclosed-recipients"}, {Name: "Jane Doe", Address: "jane@acme.com"}}
+	msg.To = []mail.Address{{Name: "a mailing list"}}
+
+	_, got := storeMarkdown(t, msg)
+	fm := parseFrontmatter(t, got)
+
+	assert.Equal(t, "undisclosed-recipients, Jane Doe <jane@acme.com>", fm["from"])
+	assert.Equal(t, []any{"jane@acme.com"}, fm["from_addresses"], "the name-only entry is not an address")
+	assert.Equal(t, "jane@acme.com", fm["from_address"])
+	assert.Equal(t, []any{"a mailing list"}, fm["to"], "the display list still shows it")
+	assert.Equal(t, []any{}, fm["to_addresses"], "but it contributes no address")
+}
+
+// TestMarkdownFrontmatterNoAddressesAtAll: an unparseable From leaves the
+// always-present fields empty rather than absent, so `front["from_address"]`
+// never raises.
+func TestMarkdownFrontmatterNoAddressesAtAll(t *testing.T) {
+	msg := testMessage()
+	msg.From = nil
+	msg.To = nil
+	msg.Cc = nil
+
+	_, got := storeMarkdown(t, msg)
+	fm := parseFrontmatter(t, got)
+
+	require.Contains(t, fm, "from_address")
+	assert.Equal(t, "", fm["from_address"])
+	assert.Equal(t, []any{}, fm["from_addresses"])
+	assert.Equal(t, []any{}, fm["to_addresses"])
+	assert.NotContains(t, fm, "cc_addresses")
+	assert.Contains(t, got, "from_address: \"\"")
+}
+
+// TestMarkdownFrontmatterAddressKeyOrder pins the ordering: every
+// machine-readable field sits immediately after the display field it derives
+// from, so the block still reads top to bottom.
+func TestMarkdownFrontmatterAddressKeyOrder(t *testing.T) {
+	msg := testMessage()
+	msg.Cc = []mail.Address{{Name: "Recruiting", Address: "recruiting@acme.com"}}
+
+	_, got := storeMarkdown(t, msg)
+	front := got[:strings.Index(got, "\n---\n")]
+
+	var keys []string
+	for _, line := range strings.Split(front, "\n") {
+		if key, _, ok := strings.Cut(line, ":"); ok && !strings.HasPrefix(line, " ") {
+			keys = append(keys, key)
+		}
+	}
+	assert.Equal(t, []string{
+		"subject",
+		"from", "from_address", "from_addresses",
+		"to", "to_addresses",
+		"cc", "cc_addresses",
+		"date", "message_id", "thread_id", "thread_id_source",
+		"in_reply_to", "account", "rule", "labels",
+	}, keys)
 }
 
 func TestMarkdownWritesAttachments(t *testing.T) {

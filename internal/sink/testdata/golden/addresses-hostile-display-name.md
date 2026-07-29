@@ -1,10 +1,12 @@
 ---
 subject: 'Re: Your application for Senior Engineer'
-from: Jane Doe <jane@acme.com>
-from_address: jane@acme.com
-from_addresses: [jane@acme.com]
-to: [me@example.com]
+from: Doe, Jane <ceo@acme.com> <attacker@evil.example>
+from_address: attacker@evil.example
+from_addresses: [attacker@evil.example]
+to: ['Ops <ops@acme.com>, Security <sec@acme.com> <me@example.com>']
 to_addresses: [me@example.com]
+cc: [<billing@acme.com> <cc@example.com>]
+cc_addresses: [cc@example.com]
 date: 2026-07-28T09:15:00Z
 message_id: <abc123@acme.com>
 thread_id: 18fe9c0d1a2b3c4d
@@ -17,7 +19,4 @@ labels: [INBOX]
 
 Hi there,
 
-Thanks for applying. We'd like to schedule a call.
-
---
-Jane
+Thanks for applying.

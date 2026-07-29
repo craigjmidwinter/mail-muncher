@@ -248,13 +248,35 @@ func normalizeBody(s string) string {
 // join key, `thread_id_source` says how much to trust it, `in_reply_to` names
 // the parent. The full `references` chain is left out — it is unbounded, and
 // the .eml sitting next to this file has it verbatim.
+//
+// Each address header is carried twice: once as a display string for a human
+// (`from`, `to`, `cc`) and once as bare addr-specs for a program
+// (`from_address`, `from_addresses`, `to_addresses`, `cc_addresses`). The
+// display form is not RFC 5322-quoted — a display name is free to contain
+// `<`, `>` and `,` — so it cannot be parsed back into addresses, and a
+// consumer that tries is one hostile display name away from reading the wrong
+// address. Each machine-readable field sits immediately after the display
+// field it derives from and is present exactly when that field is.
 type frontmatter struct {
-	Subject   string      `yaml:"subject"`
-	From      string      `yaml:"from"`
-	To        flowStrings `yaml:"to"`
-	Cc        flowStrings `yaml:"cc,omitempty"`
-	Date      time.Time   `yaml:"date"`
-	MessageID string      `yaml:"message_id"`
+	Subject string `yaml:"subject"`
+	From    string `yaml:"from"`
+	// FromAddress is the sender's bare addr-spec: the first From address that
+	// has one. Always emitted, "" only when the header carried no address at
+	// all — model.Parse falls back to Sender when there is no From, so in
+	// practice this is always populated.
+	FromAddress string `yaml:"from_address"`
+	// FromAddresses is every From addr-spec, in header order, so a message with
+	// more than one author is not silently reduced to its first. FromAddress is
+	// its first element. Always emitted, `[]` when there is no address.
+	FromAddresses flowStrings `yaml:"from_addresses"`
+	To            flowStrings `yaml:"to"`
+	// ToAddresses is the bare addr-spec of each To address. Always emitted.
+	ToAddresses flowStrings `yaml:"to_addresses"`
+	Cc          flowStrings `yaml:"cc,omitempty"`
+	// CcAddresses is the bare addr-spec of each Cc address, omitted with `cc`.
+	CcAddresses flowStrings `yaml:"cc_addresses,omitempty"`
+	Date        time.Time   `yaml:"date"`
+	MessageID   string      `yaml:"message_id"`
 	// ThreadID is the conversation join key: every message of a thread carries
 	// the same value, so a reader can group a directory of these files without
 	// reassembling reference chains. Always present.
@@ -289,8 +311,12 @@ func newFrontmatter(msg *model.Message, rule *config.Rule, files []attachmentFil
 	}
 	fm.Subject = msg.Subject
 	fm.From = formatAddresses(msg.From)
+	fm.FromAddresses = bareAddresses(msg.FromAddresses())
+	fm.FromAddress = primaryAddress(fm.FromAddresses)
 	fm.To = addressList(msg.To)
+	fm.ToAddresses = bareAddresses(msg.ToAddresses())
 	fm.Cc = addressList(msg.Cc)
+	fm.CcAddresses = bareAddresses(msg.CcAddresses())
 	fm.Date = msg.Date.UTC()
 	fm.MessageID = msg.MessageID
 	fm.ThreadID = msg.ThreadID
@@ -343,6 +369,45 @@ func addressList(addrs []mail.Address) flowStrings {
 		out = append(out, formatAddress(a))
 	}
 	return out
+}
+
+// bareAddresses is the machine-readable counterpart of addressList: the
+// addr-spec of each address, with no display name and no angle brackets.
+//
+// Values are emitted exactly as the parser produced them. Nothing is
+// lowercased or otherwise normalized: the local part of an addr-spec is
+// case-sensitive in principle, and a consumer that wants to fold case can, but
+// a consumer that needs the address the sender actually wrote cannot get it
+// back once it has been folded here.
+//
+// Entries with no addr-spec are dropped — a malformed header can parse to a
+// display name and nothing else, and an empty string in a list of addresses is
+// a footgun rather than information. So these lists can be shorter than their
+// display counterparts, and the two must not be indexed against each other.
+func bareAddresses(addrs []string) flowStrings {
+	if len(addrs) == 0 {
+		return nil
+	}
+	out := make(flowStrings, 0, len(addrs))
+	for _, a := range addrs {
+		if a != "" {
+			out = append(out, a)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// primaryAddress is the one address a consumer means by "who sent this": the
+// first of the From addr-specs. Multiple From addresses are legal and stay
+// visible in from_addresses, so choosing one here loses nothing.
+func primaryAddress(addrs flowStrings) string {
+	if len(addrs) == 0 {
+		return ""
+	}
+	return addrs[0]
 }
 
 // flowStrings marshals as a single-line YAML flow sequence (`to: [a, b]`)
