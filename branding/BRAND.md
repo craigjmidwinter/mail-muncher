@@ -243,6 +243,36 @@ python3 branding/build.py     # needs rsvg-convert, ImageMagick, fonttools
 
 ---
 
+## On the docs site
+
+| File | What |
+| --- | --- |
+| `docs/_sass/color_schemes/mail-muncher.scss` | the light scheme, selected by `color_scheme: mail-muncher` |
+| `docs/_sass/custom/custom.scss` | the display face, the logo sizing, and the whole dark scheme |
+| `docs/_sass/custom/setup.scss` | retints the theme's colour ramp so callouts stay on palette |
+| `docs/_includes/head_custom.html` | favicons, `theme-color`, Open Graph image metadata |
+
+Both schemes ship in **one** stylesheet. just-the-docs compiles one scheme per
+file and switches by swapping the `<link>`, which flashes; instead the dark
+values are a `prefers-color-scheme` block in the same file, so the browser
+resolves them before first paint. No JavaScript, no toggle, no flash.
+
+The dark block is explicit overrides rather than a re-import of the theme's
+modules. That is not a style preference: GitHub Pages' Jekyll runs Ruby Sass,
+which refuses a nested `@import` of any file carrying a root-only directive, and
+just-the-docs' `content.scss` opens with `@charset`. The override list was
+produced by compiling the light stylesheet and enumerating every declaration
+that carries a palette colour — 66 rules. **If the theme is ever unpinned from
+just-the-docs v0.12.0, re-run that enumeration**, or a new rule will be
+light-only in dark mode.
+
+One deliberate exception to the palette rule: the theme derives a few hover and
+pressed states with `darken($link-color, 2%)` and similar, which produces values
+that are not in the table. They are derivations of a palette colour rather than
+new colours, and removing them would mean forking the theme.
+
+---
+
 ## What not to do
 
 - **Do not put the free mark on a light background.** Cream on Paper is 1.12:1.
