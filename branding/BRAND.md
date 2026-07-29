@@ -76,9 +76,10 @@ deep is the emphasis. That is why `$link-color` differs between the two schemes.
 | --- | --- | --- |
 | 17.46:1 | screen `#17130F` on light Paper `#FBF8F5` | the dark mass the face sits in |
 | 16.29:1 | Ink keyline `#1F1A17` on light Paper | what holds the light-surface silhouette |
-| 16.29:1 | teeth `#FBF8F5` on mouth interior `#1F1A17` | the face |
+| 17.46:1 | teeth `#FBF8F5` on screen `#17130F` | the face, and the mouth's interior |
 | 15.61:1 | case cream `#F1EBE4` on dark Paper `#17130F` | the dark-surface silhouette |
-| 4.82:1 | Accent `#E0533D` on screen | chevron, blush, LED, seams |
+| 4.82:1 | Accent `#E0533D` on screen | chevron and blush |
+| 3.24:1 | Accent on envelope paper `#F1EBE4` | the seams, a non-text boundary |
 | 3.10:1 | Muted keyline `#6B625C` on dark Paper | non-text boundary, 3:1 bar |
 | **1.12:1** | **case cream on light Paper** | **why the keyline changes weight** |
 
@@ -91,49 +92,67 @@ the work.
 ## The mark
 
 A chunky cream CRT with an angry face on its dark screen — two brow-slanted
-eyes, red blush, a red `>` prompt chevron — biting an envelope that is halfway
-down its throat.
+eyes, red blush blocks, a red `>` prompt chevron — with an envelope tucked into
+its open, toothed mouth. The case stays the dominant shape; the envelope breaks
+past its right edge by four cells and no more.
 
-The concept came from a reference illustration. Three things were changed
-deliberately in the redraw:
+### It is a transcription, not an interpretation
 
-- **The prompt chevron is a real `>`, not an ambiguous shape.** It is the one
-  element that ties the character to a CLI, so it is drawn as a clean
-  three-pixel-thick caret rather than an arrow-like squiggle.
-- **The pupils are fully enclosed in white.** The reference has an open notch,
-  which at pixel scale reads as a lowercase `b` and `d`. Enclosing them keeps
-  them eyes.
-- **The envelope's leading corners are bitten off**, with the teeth that took
-  them drawn on top and keylined so they do not merge into the cream envelope.
-  In the reference the envelope reads as adjacent to the mouth; here it reads as
-  being eaten, which was the point of the drawing.
+The mark comes from an approved reference illustration. **The drawing is not
+ours to change.** Proportions, placement, expression, shapes and relative sizes
+are all taken across as drawn: the brows that step up and away from each pupil,
+the loose glint squares (two on the left eye, one on the right — they are not a
+mirrored pair in the reference and they are not mirrored here), the blush as
+small blocks rather than lines, the rounded mouth with its teeth carried on the
+rim, the `>` at the screen's left edge at the size the reference draws it, and
+the X of seams across the envelope's face.
 
-### Grid: 48 × 48
+The reference is machine-generated, so only its *execution* was fixed:
 
-32 × 32 was tried first and does not hold this concept. It was drawn, rendered
-and looked at: at 32 the bezel collapses to one pixel, the teeth become
-single-pixel spikes, and the eye — which now has a brow slope *and* an enclosed
-pupil — cannot be built at all without reading as a letterform. The new concept
-carries strictly more than the old one (a face, blush, a chevron, a toothed
-mouth, an envelope with seams), and 48 is the smallest grid that gives the bezel
-three pixels and every face feature two.
+- **Soft and anti-aliased edges** became hard cell boundaries.
+- **Two different pixel pitches** — the case is drawn on roughly 19.5 device
+  pixels, the face on roughly 15.3 — became one grid.
+- **The glow and drop-shadow haloes** around the case and the envelope were
+  dropped; where the reference draws a real one-cell outline (the envelope's
+  border, the mouth's outer edge, the case's keyline) that outline stays.
+- **Off-palette colours** were mapped onto the table above. Nothing else moved.
 
-Going to 48 costs nothing at small sizes, because a 48-grid drawing was never
-going to survive a 16px render anyway. That is what the second mark is for.
+The case's two-tone shading is part of the drawing, not part of the execution:
+the lit top and left edges take Paper, the edges turned away take Muted, and the
+screen sits behind a one-cell Muted bezel. Flattening that would lose the CRT's
+volume.
+
+### Grid: 60 × 60
+
+The grid is set by the finer of the reference's two pitches. Re-laying the face
+on the *coarser* pitch was the alternative and it costs the drawing real
+information: the eyes lose the step that makes the brow, and the mouth loses the
+alternating notches and tips that make the teeth teeth. Re-laying the case on
+the finer pitch costs nothing but grid cells. At that pitch the drawing measures
+55 × 52 cells, so 60 × 60 holds it with an even margin.
+
+60 also divides cleanly into every raster this repo ships: 480/60 = 8,
+240/60 = 4, 180/60 = 3, 120/60 = 2. Every PNG lands on exact pixel boundaries
+with no padding and no fractional scale.
 
 ### Two marks
 
 | | File | Grid | Use at |
 | --- | --- | --- | --- |
-| **Full mark** | `mark.svg` / `mark-dark.svg` | 48 × 48 | **48px and up** |
+| **Full mark** | `mark.svg` / `mark-dark.svg` | 60 × 60 | **48px and up** |
 | **Small mark** | `mark-small.svg` / `mark-small-dark.svg` | 16 × 16 | **below 48px** |
 
 The full mark at 16px is mush — the teeth, the envelope and the chevron all
 collapse into noise and take the silhouette with them. This was rendered and
-looked at, not assumed. The small mark drops the teeth, the envelope, the
-chevron and the case shading, and keeps what still reads at one device pixel per
-grid cell: the chunky CRT silhouette, two eyes with the brow slant built into
-their shape, a grin, and one red LED as the single spot of accent.
+looked at, not assumed. The small mark is derived from the same drawing and
+drops the chevron, the envelope, the blush and the case shading, keeping what
+still reads at one device pixel per grid cell: the chunky CRT, the brow step
+that carries the expression, a mouth with two tooth gaps, and one red LED as the
+single spot of accent.
+
+The small mark was rendered at 16, 32 and 48 and looked at too. An earlier
+version put the eyes and the mouth on adjacent rows and the white shapes fused
+into a single blob; the shipped version keeps one dark row between them.
 
 Both are the same character. Do not scale the full mark down past 48px, and do
 not scale the small mark up past 48px — at 64px and above its coarseness reads
@@ -222,7 +241,7 @@ generator, and the font's build-time source.
 
 | File | What |
 | --- | --- |
-| `docs/assets/brand/mark.svg` | full mark, 48 grid, Ink keyline, for light surfaces |
+| `docs/assets/brand/mark.svg` | full mark, 60 grid, Ink keyline, for light surfaces |
 | `docs/assets/brand/mark-dark.svg` | full mark, Muted keyline, for dark surfaces |
 | `docs/assets/brand/mark-small.svg` | small mark, 16 grid, Ink keyline |
 | `docs/assets/brand/mark-small-dark.svg` | small mark, Muted keyline |
@@ -230,17 +249,17 @@ generator, and the font's build-time source.
 | `docs/assets/brand/lockup-dark.svg` | same, cream wordmark, for dark surfaces |
 | `docs/assets/brand/lockup-408.png` | lockup at 4x (408 x 64), for anywhere SVG is awkward |
 | `docs/assets/brand/lockup-dark-408.png` | same, dark-surface variant |
-| `docs/assets/brand/mark-480.png` | 480px light mark (48 × 10), transparent |
+| `docs/assets/brand/mark-480.png` | 480px light mark (60 × 8), transparent |
 | `docs/assets/brand/mark-dark-480.png` | 480px dark-surface mark, transparent |
-| `docs/assets/brand/apple-touch-icon.png` | 180px; a 144px mark on Paper (iOS wants opaque) |
+| `docs/assets/brand/apple-touch-icon.png` | 180px (60 × 3) on Paper — iOS wants opaque |
 | `docs/assets/brand/favicon-16/32/48.png` | small mark at 1×, 2×, 3× |
 | `docs/assets/brand/social-preview.png` | 1280 × 640 GitHub / OG card |
 | `docs/assets/fonts/Silkscreen-Bold.woff2` | the webfont the site serves |
 | `branding/build.py` | regenerates every one of the above |
 
-Rasters are always rendered at a **whole multiple** of the grid and then padded
-to the target size if the target is not a multiple. A 180px icon is a 144px mark
-on a 180px field, not a 3.75× smear.
+Rasters are always rendered at a **whole multiple** of the grid, and padded to
+the target if the target is not a multiple. On the 60 grid nothing needs padding
+— 480, 240, 180 and 120 are all whole multiples of 60.
 
 To regenerate:
 

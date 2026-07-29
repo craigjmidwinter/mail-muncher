@@ -11,7 +11,7 @@ script regenerates them, plus the PNG rasters, from the grids below.
 Requires `rsvg-convert` (librsvg) for the PNGs and `fonttools` for converting
 the Silkscreen wordmark to outlines so no SVG consumer needs the font file.
 
-Every colour is one of the eleven values in the brand palette; see BRAND.md.
+Every colour is one of the values in the brand palette; see BRAND.md.
 """
 
 import os
@@ -24,13 +24,11 @@ FONT = os.path.join(ROOT, "branding", "fonts", "Silkscreen-Bold.ttf")
 # --------------------------------------------------------------- palette ---
 # Role -> hex. Only values from the brand palette table are permitted here.
 PAL = {
-    "o": "#6B625C",  # keyline around the case and the envelope   (Muted light)
-    "c": "#F1EBE4",  # case cream, the main body colour           (Surface light)
-    "d": "#A79C93",  # case shade, right and bottom edges         (Muted dark)
-    "s": "#17130F",  # screen                                     (Paper dark)
-    "t": "#FBF8F5",  # teeth and eye whites, the brightest value  (Paper light)
-    "p": "#1F1A17",  # pupils and mouth interior                  (Ink light)
-    "e": "#F1EBE4",  # envelope paper                             (Surface light)
+    "o": "#6B625C",  # keyline round case, envelope and stand     (Muted light)
+    "c": "#F1EBE4",  # case cream and envelope paper              (Surface light)
+    "d": "#A79C93",  # shade: screen bezel, lit-away edges, neck  (Muted dark)
+    "s": "#17130F",  # screen and the mouth's interior            (Paper dark)
+    "t": "#FBF8F5",  # teeth, eye whites and lit edges            (Paper light)
     "r": "#E0533D",  # chevron, blush, envelope seams, power LED  (Accent light)
 }
 # The keyline is the only value that differs between the two variants: on light
@@ -59,31 +57,6 @@ def rect(g, x0, y0, x1, y1, c):
                 g[y][x] = c
 
 
-def rrect(g, x0, y0, x1, y1, c, cut=1):
-    """Filled rect with `cut` steps knocked off each corner."""
-    for y in range(y0, y1 + 1):
-        for x in range(x0, x1 + 1):
-            if min(x - x0, x1 - x) + min(y - y0, y1 - y) < cut:
-                continue
-            g[y][x] = c
-
-
-def keyline(g, c="o", over=("c", "d", "s", "t", "p", "r")):
-    """Wrap the current silhouette in a one-pixel keyline."""
-    h, w = len(g), len(g[0])
-    add = []
-    for y in range(h):
-        for x in range(w):
-            if g[y][x] != ".":
-                continue
-            for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-                if 0 <= nx < w and 0 <= ny < h and g[ny][nx] in over:
-                    add.append((x, y))
-                    break
-    for x, y in add:
-        g[y][x] = c
-
-
 def stamp(g, x0, y0, art, c):
     cells = []
     for i, row in enumerate(art):
@@ -94,144 +67,218 @@ def stamp(g, x0, y0, art, c):
     return cells
 
 
-def rim(g, cells, c="o", over=("e", "r")):
-    """Sink `cells` into whatever they overlap by darkening the edge around
-    them. Teeth and envelope are both cream; without this they merge."""
-    h, w = len(g), len(g[0])
-    todo = set()
-    for x, y in cells:
-        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-            if 0 <= nx < w and 0 <= ny < h and g[ny][nx] in over:
-                todo.add((nx, ny))
-    for x, y in todo:
-        g[y][x] = c
-
-
 def rows(g):
     return ["".join(r) for r in g]
 
 
-# ------------------------------------------------------- the 48x48 mark ---
-def mark48():
-    """The full mark: a cream CRT with a face, chomping an envelope.
+# ------------------------------------------------------- the 60x60 mark ---
+# The mark is a transcription of the approved reference drawing, cell for cell.
+# The reference is drawn on two different pixel pitches - the case on roughly
+# 19.5 device pixels, the face on roughly 15.3 - so the first job was to pick
+# one. Re-laying the case on the coarser pitch would cost the eyes their brow
+# step and the mouth its teeth; re-laying the face on the finer pitch costs
+# nothing but grid cells. The finer pitch puts the whole drawing on 60 x 60.
+# 480/60, 240/60, 180/60 and 120/60 are all whole numbers, so every raster below
+# lands on exact pixel boundaries.
 
-    Body x2..x41 / y1..y37, screen x6..x37 / y5..y31, stand below, envelope
-    breaking out of the right edge so it reads as half-swallowed.
-    """
-    g = grid(48, 48)
+# Case silhouette: row -> (first column, last column). The top corners sweep far
+# wider than the bottom ones. That is the CRT's bulge and it is in the reference.
+CASE = {y: (3, 52) for y in range(4, 49)}
+CASE.update({4: (18, 37), 5: (11, 44), 6: (7, 48), 7: (5, 50), 8: (4, 51),
+             46: (4, 51), 47: (6, 49), 48: (9, 46)})
 
-    # case, neck and base as one cream silhouette ---------------------------
-    rrect(g, 2, 1, 41, 38, "c", cut=3)          # case
-    rect(g, 18, 39, 25, 41, "c")                # neck
-    rrect(g, 13, 42, 30, 42, "c", cut=0)        # base
-    rrect(g, 10, 43, 33, 46, "c", cut=1)
+# The screen aperture, same treatment.
+SCREEN = {y: (8, 47) for y in range(10, 42)}
+SCREEN.update({10: (14, 41), 11: (11, 44), 12: (10, 45), 13: (9, 46),
+               40: (10, 45), 41: (12, 43)})
 
-    # case shading: light falls top-left --------------------------------------
-    rect(g, 40, 3, 41, 38, "d")                 # right edge
-    rect(g, 4, 37, 41, 38, "d")                 # bottom edge
-    rect(g, 11, 46, 32, 46, "d")                # base front
-    rect(g, 25, 39, 25, 41, "d")                # neck right
+# The prompt chevron: a two-pixel-thick ">" at the screen's left edge.
+CHEVRON = ["##...",
+           ".##..",
+           "..##.",
+           "...##",
+           "..##.",
+           ".##..",
+           "##..."]
 
-    # screen ------------------------------------------------------------------
-    rrect(g, 6, 5, 37, 33, "s", cut=2)
-    rect(g, 5, 5, 5, 33, "d")                   # recessed inner bezel, left
-    rect(g, 6, 4, 37, 4, "d")                   # recessed inner bezel, top
+# The eyes. The stepped tail climbing off the top-outer corner of each pupil is
+# the brow, and it is the whole expression. They are not mirror images of each
+# other in the reference, so they are not mirrored here; the loose squares are
+# glints, and the left eye has two while the right eye has one.
+EYE_L = ["#.....",
+         ".##...",
+         "####..",
+         "##..#.",
+         "##....",
+         "##....",
+         ".##..#"]
+EYE_R = ["....#.",
+         "...#..",
+         ".##...",
+         "##..#.",
+         "##....",
+         "##....",
+         ".##..."]
 
-    # keyline around the whole cream silhouette -------------------------------
-    keyline(g)
+# The mouth: a rounded opening with one shade pixel on its outer edge and one
+# white pixel inside that, carrying the teeth on the rim. The upper jaw runs on
+# over the envelope, which is what makes the envelope read as half-swallowed
+# rather than merely adjacent. 'd' shade, 't' white, '-' the dark gape, 'o' the
+# keyline that stops the white teeth merging into the cream envelope behind
+# them, ' ' leave whatever is underneath.
+MOUTH = [
+    "        ddddddddddddd   ",
+    "  dtttttttttttttttttto  ",
+    " dttttt-ttt-ttt-ttto    ",
+    " dt--t---t---t--o       ",
+    "dt-------------o        ",
+    "dt-----------           ",
+    "dt-----------           ",
+    "dt-----------           ",
+    "dt-----------           ",
+    "dt-----------           ",
+    " dt--t-------           ",
+    " dtttt-t-t---           ",
+    "  dtttttttt-t           ",
+    "   dttttttttttto        ",
+    "    ddddddddddddo       ",
+]
+
+# The envelope's seams, in envelope-local (row, columns). Read together they are
+# an X: the flap's V from the two top corners down to a flat centre, and two
+# more diagonals climbing from the bottom corners to meet it.
+SEAMS = {
+    1:  (33, 34),
+    2:  (33,),
+    3:  (16, 32),
+    4:  (17, 18, 31),
+    5:  (18, 19, 29, 30),
+    6:  (19, 20, 28, 29),
+    7:  (20, 21, 27, 28),
+    8:  (19, 20, 22, 26, 27, 28, 29),
+    9:  (18, 19, 23, 24, 25, 26, 29, 30),
+    10: (17, 18, 30, 31),
+    11: (16, 17, 31, 32),
+    12: (14, 15, 16, 32, 33),
+    13: (15, 33, 34),
+    14: (34,),
+}
+
+
+def mark60():
+    """A cream CRT with an angry face, chomping an envelope."""
+    g = grid(60, 60)
+
+    # ---- case ---------------------------------------------------------------
+    for y, (l, r) in CASE.items():
+        rect(g, l, y, r, y, "c")
+    for y, (l, r) in CASE.items():          # lit on the top-left, shaded away
+        g[y][l] = g[y][r] = "o"
+        if l + 1 <= r - 1:
+            g[y][l + 1] = "t"
+            g[y][r - 1] = "d"
+        if l + 2 <= r - 2:
+            g[y][r - 2] = "d"
+    top, bot = min(CASE), max(CASE)
+    for x in range(CASE[top][0], CASE[top][1] + 1):
+        g[top][x] = "o"
+    for x in range(CASE[top + 1][0] + 1, CASE[top + 1][1]):
+        g[top + 1][x] = "t"
+    for x in range(CASE[bot][0], CASE[bot][1] + 1):
+        g[bot][x] = "o"
+    for x in range(CASE[bot - 1][0] + 1, CASE[bot - 1][1]):
+        g[bot - 1][x] = "d"
+
+    # ---- stand: a splayed neck under a bright plinth -------------------------
+    for y, l, r in ((49, 19, 36), (50, 16, 38), (51, 14, 40), (52, 13, 41)):
+        rect(g, l, y, r, y, "d")
+        g[y][l] = g[y][r] = "o"
+    for y, fill in ((53, "t"), (54, "c"), (55, "o")):
+        rect(g, 11, y, 43, y, fill)
+        g[y][11] = g[y][43] = "o"
+
+    # ---- screen, recessed behind one pixel of bezel --------------------------
+    for y, (l, r) in SCREEN.items():
+        rect(g, l, y, r, y, "s")
+    for y, (l, r) in SCREEN.items():
+        for x in (l - 1, r + 1):
+            if g[y][x] in ("c", "t", "d"):
+                g[y][x] = "d"
+    for y, ref in ((min(SCREEN) - 1, SCREEN[min(SCREEN)]),
+                   (max(SCREEN) + 1, SCREEN[max(SCREEN)])):
+        for x in range(ref[0] - 1, ref[1] + 2):
+            if g[y][x] in ("c", "t"):
+                g[y][x] = "d"
+    for x in range(CASE[43][0] + 2, CASE[43][1] - 1):   # lit front panel edge
+        if g[43][x] == "c":
+            g[43][x] = "t"
 
     # ---- face ---------------------------------------------------------------
-    # prompt chevron: a three-pixel-thick ">" at the left of the screen
-    chevron = ["###....",
-               "####...",
-               ".####..",
-               "..####.",
-               "...####",
-               "..####.",
-               ".####..",
-               "####...",
-               "###...."]
-    stamp(g, 8, 9, chevron, "r")
+    stamp(g, 11, 18, CHEVRON, "r")
+    stamp(g, 20, 15, EYE_L, "t")
+    stamp(g, 36, 15, EYE_R, "t")
+    rect(g, 19, 23, 21, 24, "r")            # blush: blocks, not underscores
+    rect(g, 42, 21, 44, 22, "r")
 
-    # Angry, because the brow drops toward the nose. The pupil is fully
-    # enclosed in white; an open notch reads as a lowercase b and d.
-    eye_l = ["###....",
-             "#####..",
-             "#######",
-             "##...##",
-             "##...##",
-             "#######",
-             ".#####."]
-    eye_r = ["....###",
-             "..#####",
-             "#######",
-             "##...##",
-             "##...##",
-             "#######",
-             ".#####."]
-    stamp(g, 16, 8, eye_l, "t")
-    stamp(g, 27, 8, eye_r, "t")
-
-    rect(g, 18, 16, 22, 16, "r")                # blush
-    rect(g, 28, 16, 32, 16, "r")
-
-    # ---- mouth --------------------------------------------------------------
-    rrect(g, 15, 19, 36, 31, "t", cut=2)        # one-pixel cream rim ...
-    rrect(g, 16, 20, 36, 30, "p", cut=1)        # ... around a dark gape
-
-    def tooth_down(x):
-        return stamp(g, x, 20, ["##", ".#", ".#"], "t")
-
-    def tooth_up(x):
-        return stamp(g, x, 28, [".#", ".#", "##"], "t")
-
-    for x in (18, 22, 26):
-        tooth_down(x)
-    for x in (20, 24, 28):
-        tooth_up(x)
-
-    # ---- envelope, clamped in the jaws --------------------------------------
-    EX0, EY0, EX1, EY1 = 29, 20, 46, 32
-    rect(g, EX0, EY0, EX1, EY1, "e")
-    rect(g, EX0, EY0, EX1, EY0, "o")
-    rect(g, EX0, EY1, EX1, EY1, "o")
-    rect(g, EX1, EY0, EX1, EY1, "o")
-    # the flap: two pixels thick, from both top corners down to a point
-    for y, x in enumerate(range(30, 37), start=21):
-        rect(g, x, y, x + 1, y, "r")
-        rect(g, 74 - x, y, 75 - x, y, "r")      # mirror about x = 37.5
-
-    # the jaws close over it: chunks bitten out of the leading corners, and
-    # the teeth that took them drawn on top. This is the "being eaten" read.
-    stamp(g, 29, 20, ["###", "###", "##."], "p")
-    stamp(g, 29, 30, ["##.", "###", "###"], "p")
-    tooth_down(29)
-    tooth_up(31)
+    # ---- envelope, then the jaws closing over its left end -------------------
+    EX, EY = 34, 25
+    rect(g, EX, EY, EX + 22, EY + 14, "c")
+    rect(g, EX, EY + 1, EX + 22, EY + 1, "t")          # lit top edge
+    for x in range(EX, EX + 23):
+        g[EY][x] = g[EY + 14][x] = "o"
+    for y in range(EY, EY + 15):
+        g[y][EX] = g[y][EX + 22] = "o"
+    for m, cols in SEAMS.items():
+        for k in cols:
+            g[EY + m][EX + k - 13] = "r"
+    for i, row in enumerate(MOUTH):
+        for j, ch in enumerate(row):
+            if ch != " ":
+                g[25 + i][21 + j] = {"t": "t", "d": "d", "-": "s", "o": "o"}[ch]
 
     # ---- power LED on the lower bezel ---------------------------------------
-    rect(g, 9, 35, 13, 36, "r")
+    rect(g, 43, 45, 45, 46, "r")
 
     return rows(g)
 
 
 # ------------------------------------------------------- the 16x16 mark ---
 def mark16():
-    """Favicon mark: silhouette, two angry eyes, a grin, one red LED.
+    """Favicon mark: the same character at one device pixel per grid cell.
 
-    The teeth, the envelope and the prompt chevron are deliberately absent -
-    at 16 device pixels they collapse into noise and take the face with them.
+    The chevron, the envelope, the blush and the case shading are deliberately
+    absent - at 16 device pixels they collapse into noise and take the
+    silhouette with them. What survives is the chunky CRT, the brow step that
+    carries the expression, a toothed mouth and one red LED. Rendered at 16 and
+    looked at, not assumed; an earlier version put the eyes and the mouth on
+    adjacent rows and the white shapes fused into one blob.
     """
     g = grid(16, 16)
-    rrect(g, 1, 1, 14, 10, "c", cut=1)          # case
-    rect(g, 6, 11, 9, 11, "c")                  # neck
-    rrect(g, 3, 12, 12, 13, "c", cut=0)         # base
-    rrect(g, 3, 3, 12, 8, "s", cut=1)           # screen
-    keyline(g)
+    rect(g, 2, 1, 13, 1, "o")
+    rect(g, 1, 2, 14, 2, "o")
+    rect(g, 2, 2, 13, 2, "c")
+    for y in range(3, 10):
+        g[y][1] = "o"
+        g[y][2] = "c"
+        rect(g, 3, y, 12, y, "s")
+        g[y][13] = "c"
+        g[y][14] = "o"
+    rect(g, 1, 10, 14, 10, "o")
+    rect(g, 2, 10, 13, 10, "c")
+    rect(g, 2, 11, 13, 11, "o")
+    rect(g, 6, 12, 9, 12, "d")               # neck
+    g[12][6] = g[12][9] = "o"
+    rect(g, 3, 13, 12, 13, "c")              # plinth
+    g[13][3] = g[13][12] = "o"
+    rect(g, 3, 14, 12, 14, "o")
 
-    stamp(g, 4, 4, ["##.", "###"], "t")          # eyes; the missing inner
-    stamp(g, 9, 4, [".##", "###"], "t")          # corner is the angry brow
-    rect(g, 6, 7, 9, 7, "t")                     # grin
-    rect(g, 3, 9, 5, 9, "r")                     # power LED
+    for x, y in ((4, 3), (4, 4), (5, 4), (4, 5), (5, 5)):
+        g[y][x] = "t"                        # the loose top pixel is the brow
+    for x, y in ((11, 3), (10, 4), (11, 4), (10, 5), (11, 5)):
+        g[y][x] = "t"
+    rect(g, 5, 7, 10, 8, "t")                # mouth, one dark row clear of the
+    g[8][6] = g[8][9] = "s"                  # eyes, with two gaps for teeth
+    rect(g, 3, 10, 4, 10, "r")                # power LED
     return rows(g)
 
 
@@ -346,14 +393,14 @@ def png_padded(src, dst, target, multiple, grid_size, bg):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    m48 = mark48()
+    m60 = mark60()
     m16 = mark16()
 
     # 1. the marks. Free-standing on a transparent background, in two keyline
     #    weights - see PAL_LIGHT / PAL_DARK above.
     for suffix, pal in (("", PAL_LIGHT), ("-dark", PAL_DARK)):
         write(f"mark{suffix}.svg",
-              svg_doc(48, 48, svg_rects(m48, pal=pal), "mail-muncher", DESC))
+              svg_doc(60, 60, svg_rects(m60, pal=pal), "mail-muncher", DESC))
         write(f"mark-small{suffix}.svg",
               svg_doc(16, 16, svg_rects(m16, pal=pal), "mail-muncher", DESC_SM))
 
@@ -368,13 +415,13 @@ def main():
                             "mail-muncher", DESC_SM))
 
     # 3. rasters ---------------------------------------------------------------
-    png("mark.svg", "mark-480.png", 480)                # 48 * 10
+    png("mark.svg", "mark-480.png", 480)                # 60 * 8
     png("mark-dark.svg", "mark-dark-480.png", 480)
     png("mark-small.svg", "favicon-16.png", 16)
     png("mark-small.svg", "favicon-32.png", 32)
     png("mark-small.svg", "favicon-48.png", 48)
     # iOS composites the icon onto its own background, so this one is opaque.
-    png_padded("mark.svg", "apple-touch-icon.png", 180, 3, 48, PAPER)
+    png_padded("mark.svg", "apple-touch-icon.png", 180, 3, 60, PAPER)
     # 4x the 16-unit lockup grid; a PNG fallback for anywhere SVG is awkward.
     png("lockup.svg", "lockup-408.png", 408, 64)
     png("lockup-dark.svg", "lockup-dark-408.png", 408, 64)
@@ -382,8 +429,8 @@ def main():
     # 4. social preview --------------------------------------------------------
     body = [
         f'<rect width="1280" height="640" fill="{FIELD}"/>',
-        '<g transform="translate(96 112) scale(9)">'
-        + "".join(svg_rects(m48, pal=PAL_DARK)) + "</g>",
+        '<g transform="translate(72 80) scale(8)">'
+        + "".join(svg_rects(m60, pal=PAL_DARK)) + "</g>",
     ]
     body += wm.paths("mail-muncher", 64, 576, 288, CREAM)[0]
     body += wm.paths("an email client for AI agents", 24, 576, 344, MUTED_D)[0]
