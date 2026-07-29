@@ -412,6 +412,7 @@ rules:
 | `accounts[].gmail.token_file` | path | — | Required. Where `auth` caches the OAuth token, mode 0600. |
 | `accounts[].gmail.query` | string | none | Optional Gmail search expression. A cost optimization for the **first-ever** scan only — see below. |
 | `accounts[].gmail.initial_lookback` | Go duration | `720h` | How far back the first-ever scan reaches. Must be positive. See [Backfill](#backfill-the-first-run). |
+| `accounts[].gmail.include_spam_trash` | boolean | `false` | Fetch messages in Spam and Trash. Honoured identically by both sync paths. `validate` warns when true. See [Spam and Trash](#spam-and-trash). |
 | `rules` | list | — | Evaluated in order against every message; first match wins. |
 | `rules[].name` | string | — | Required, unique. Appears in logs and in markdown frontmatter. |
 | `rules[].account` | string | all accounts | Restricts the rule to one account. |
@@ -431,11 +432,11 @@ Notes that bite people:
   nowhere else — not on incremental cycles, and not on a recovery scan after the
   history cursor expires. It is never re-applied locally. Your rules are the
   only authority on what is stored. Keep the query broad, or omit it.
-- **Full scans include Spam and Trash.** Every `users.messages.list` call sets
-  `includeSpamTrash`, so messages in Spam and Trash reach the filter engine and
-  are archived if a rule claims them. The incremental history path always
-  behaved this way; full scans now match it. Exclude them with a **rule**, not a
-  query — see [Keeping Spam and Trash out](#keeping-spam-and-trash-out).
+- **Spam and Trash are not fetched by default.** Both sync paths agree on this:
+  full scans pass `includeSpamTrash=false`, and the incremental path drops
+  messages labelled `SPAM` or `TRASH` before they reach the pipeline. Set
+  `gmail.include_spam_trash: true` to fetch them anyway — see
+  [Spam and Trash](#spam-and-trash).
 
 ### Policies for the two things that can go wrong
 
@@ -560,15 +561,34 @@ Details worth knowing:
 - Use `true` / `false` for `has_attachment`. YAML 1.2 treats `yes` and `no` as
   strings, and mail-muncher rejects them.
 
-### Keeping Spam and Trash out
+### Spam and Trash
 
-Fetches include Spam and Trash. That surprises people, so state it plainly:
-**every message in your Spam and Trash folders is evaluated against your rules**
-and will be archived if one claims it.
+**Spam and Trash are not fetched by default.** Nothing in those folders reaches
+your rules, and nothing lands on disk. Spam is the likeliest source of hostile,
+attacker-authored text in a pipeline that ends in a model's context window, so
+the default is to leave it where Gmail put it.
 
-`gmail.query` cannot fix this. It is sent only on the first-ever scan, so
-`-in:spam` there does nothing for any later cycle. Filter with a rule instead —
-the filter engine is the only thing that sees every message:
+If you want it anyway — a legitimate message misfiled as spam, or an archive
+that is genuinely complete — set the key per account:
+
+```yaml
+accounts:
+  - name: personal
+    gmail:
+      include_spam_trash: true   # validate warns; that is deliberate
+```
+
+The two settings do different jobs, and you may want both:
+
+| | Decides |
+| --- | --- |
+| `gmail.include_spam_trash` | whether those messages are **fetched at all** |
+| A rule on the `SPAM` / `TRASH` labels | what happens to them **once fetched** |
+
+`gmail.query` cannot do either job. It is sent only on the first-ever scan, so
+`-in:spam` there does nothing for any later cycle. With
+`include_spam_trash: true` set, discriminate with a rule — the filter engine is
+the only thing that sees every fetched message:
 
 ```yaml
 rules:
@@ -1053,8 +1073,9 @@ enough to write against, but treat it as subject to change until 1.0.
 - Subject slugs are ASCII-only; non-Latin subjects file as `no-subject`.
 - `gmail.query` applies only to the first-ever scan of an account — not to
   incremental cycles, and not to a recovery scan after the cursor expires.
-- Full scans include Spam and Trash. Exclude them with a rule on the `SPAM` and
-  `TRASH` labels.
+- Spam and Trash are not fetched at all unless
+  `gmail.include_spam_trash: true`. Once fetched, a rule on the `SPAM` and
+  `TRASH` labels decides what happens to them.
 - Gmail's download concurrency (4) and page size (500) are not configurable.
 - No predicate sees the message body; matching is on headers, labels and dates.
 
