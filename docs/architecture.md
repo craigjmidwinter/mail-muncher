@@ -44,6 +44,7 @@ file is.
 | `internal/model` | The canonical `Message` and RFC822 parsing. | `enmime` |
 | `internal/provider` | The `Provider` interface, `RawMessage`, `SyncState`, retry/backoff, a `Fake`. | nothing internal |
 | `internal/provider/gmail` | OAuth, token cache, list/history/RAW fetch, label resolution. | `internal/provider`, `internal/config` |
+| `internal/provider/imap` | `password_cmd`, TLS dial and login, per-mailbox UID cursors, `BODY.PEEK[]` fetch. | `internal/provider`, `internal/config`, `go-imap/v2` |
 | `internal/filter` | Match-tree compilation, the `Engine`, the domain-file cache. | `internal/config`, `internal/model` |
 | `internal/sink` | On-disk layout, `.eml` and markdown writers, atomic writes. | `internal/config`, `internal/model` |
 | `internal/state` | Per-account sync state files and the `flock`-based lockfile. | `internal/provider` |
@@ -86,8 +87,8 @@ Three details the interface deliberately pins down:
 
 - **`ID` must be stable across runs.** It is half the input to the sinks'
   idempotency digest, so an unstable id means re-downloading and re-writing the
-  same message under a new name forever. Gmail uses the message id; the planned
-  IMAP provider will use `account:mailbox:uidvalidity:uid`.
+  same message under a new name forever. Gmail uses the message id; IMAP uses
+  `account:mailbox:uidvalidity:uid`.
 - **`Raw` must be byte-faithful.** The `.eml` sink writes it verbatim and
   `internal/model` parses from it. Re-encoding anywhere upstream breaks DKIM
   verification for every archived message.
@@ -244,7 +245,7 @@ it is genuinely always present.
 | A new match predicate | `internal/filter/compile.go` (a `compileX` function, a case in `compileNode`, an entry in `predicates`), the package doc in `doc.go`, and `docs/filters.md`. If it needs message data that does not exist yet, add an accessor to `internal/model/message.go` first. |
 | A new predicate whose value is a file path | Also add the key to `filePathPredicates` in `internal/config/expand.go`, or its `~`/`$VAR` will not expand and `validate` will not check it. |
 | A new output format | A new `Sink` in `internal/sink`, a `config.Format` constant, a case in `sink.New`, and `validateFormats` prose. |
-| A new provider | A package under `internal/provider/`, implementing `Provider`. A config block and a case in `validateAccounts`. **Nothing in pipeline, filter, or sink.** |
+| A new provider | A package under `internal/provider/`, implementing `Provider`. A config block, a case in `validateAccounts`, and a case in `pipeline.DefaultProviderFactory` — that switch is the one line outside `internal/provider` that may change. **Nothing else in pipeline, and nothing in filter or sink.** |
 | Anything about what a message exposes | `internal/model`. Parsing lives in `parse.go`, accessors in `message.go`. |
 | A new CLI flag | `cmd/mail-muncher`. Keep behavior in an internal package and the command thin. |
 | A new manifest field | `internal/pipeline/manifest.go`, and `docs/manifest.md`. Additive and `omitempty`; the JSON tags are API surface. |
@@ -253,12 +254,28 @@ it is genuinely always present.
 
 ## Design decisions worth knowing
 
-**Gmail API, not IMAP, first.** IMAP is more general, but Gmail-over-IMAP needs
-an app password, has All-Mail/label duplication quirks, and means hand-rolled
-per-folder UID bookkeeping. The Gmail API gives OAuth, `format=RAW` (so storage
-and parsing stay provider-neutral anyway), labels as data, and `users.history`
-for cheap incremental sync. Because the provider hands over raw RFC822 either
-way, IMAP remains a clean second implementation.
+**Gmail API first, IMAP second — and the seam held.** The Gmail API gives OAuth,
+`format=RAW` (so storage and parsing stay provider-neutral anyway), labels as
+data, and `users.history` for cheap incremental sync, which made it the cheaper
+first implementation. IMAP was the test of the claim above, and it passed:
+adding it took a package under `internal/provider/`, a config block, and one
+case in `DefaultProviderFactory`. `internal/pipeline`, `internal/filter` and
+`internal/sink` were not touched.
+
+The two things IMAP needed that Gmail did not, it got from the interface as it
+already stood. Per-mailbox UID bookkeeping lives in `SyncState.Extra`, which is
+free-form per-provider state. And an empty `RawMessage.ThreadID` is not a gap:
+IMAP has no conversation id, and `model.Parse` already synthesized one from the
+`References` chain for exactly this case.
+
+**A UIDVALIDITY change is a resync, not a hint.** When an IMAP server's
+UIDVALIDITY differs from the stored one, the mailbox's UID cursor is discarded
+and the fetch falls back to `initial_lookback`. That is the protocol saying
+every UID you remember now names a different message, and honouring it
+half-heartedly loses or duplicates mail silently. The UIDVALIDITY is also part
+of the message id, so the resync re-archives its window under fresh filenames
+rather than colliding with what the mailbox's previous incarnation left behind:
+duplicated mail is recoverable, skipped mail is not.
 
 **The history cursor is best-effort.** Gmail keeps roughly a week of history. A
 404 from `users.history.list` is not an error: the cursor is cleared and the
@@ -330,8 +347,14 @@ inline `cid:` images stay unresolved links. The `.eml` is the fidelity copy, and
 any feature request of the form "make markdown byte-accurate" is really a
 request to read the `.eml`.
 
-**Read-only is structural.** The only scope requested is `gmail.readonly`. There
-is no write path to remove, because there is no write path.
+**Read-only is structural on both providers, by different means.** Gmail
+requests only `gmail.readonly`: there is no write path to remove, because there
+is no write path. IMAP has no scopes to lean on, so it is enforced twice in the
+client — folders are opened with `EXAMINE` rather than `SELECT`, and bodies are
+fetched with `BODY.PEEK[]` rather than `BODY[]`. Either alone suffices on a
+compliant server; both are used because a bare `BODY[]` sets `\Seen` on mail a
+human is also reading, and nothing behind that one field would stop it. It has
+a test whose negative control proves the test can fail.
 
 ## Testing the seams
 
@@ -345,4 +368,12 @@ p := provider.NewFake("gmail", msgs...)
 
 The Gmail provider itself is tested against an `httptest` server holding canned
 JSON, via `gmail.NewWithHTTPClient(ctx, account, srv.Client(), srv.URL, opts)`.
+The IMAP provider is tested against go-imap's in-memory server on a loopback
+socket — a real server speaking the real protocol, because the behaviours that
+matter there (UIDVALIDITY, the `n:*` range quirk, `\Seen` on a non-PEEK fetch)
+are the *server's* behaviours, and a hand-written fake would only assert what we
+already believed. `Options.TLSConfig` lets a test mint a throwaway certificate
+so the default `tls: true` path is exercised rather than assumed; there is no
+config key for it, and there should not be one.
+
 No test in this repo touches the network. See [CONTRIBUTING.md](../CONTRIBUTING.md).

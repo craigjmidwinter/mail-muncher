@@ -663,11 +663,33 @@ func TestDebugLoggingRecordsEvaluateDecisions(t *testing.T) {
 // TestDefaultProviderFactoryRejectsUnknownProvider keeps the seam honest: an
 // unrecognized provider fails at the factory, not somewhere downstream.
 func TestDefaultProviderFactoryRejectsUnknownProvider(t *testing.T) {
-	_, err := DefaultProviderFactory(context.Background(), &config.Account{Name: "x", Provider: "imap"})
+	_, err := DefaultProviderFactory(context.Background(), &config.Account{Name: "x", Provider: "pigeon"})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "imap")
+	require.Contains(t, err.Error(), "pigeon")
 
 	_, err = DefaultProviderFactory(context.Background(), nil)
+	require.Error(t, err)
+}
+
+// TestDefaultProviderFactoryBuildsIMAP: the whole cost of a second provider,
+// at this layer, is one case in the switch. Nothing else in this package —
+// and nothing in internal/filter or internal/sink — knows IMAP exists.
+func TestDefaultProviderFactoryBuildsIMAP(t *testing.T) {
+	p, err := DefaultProviderFactory(context.Background(), &config.Account{
+		Name:     "fastmail",
+		Provider: config.ProviderIMAP,
+		IMAP: &config.IMAPConfig{
+			Host:        "imap.example.test",
+			Username:    "someone@example.test",
+			PasswordCmd: "true",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, config.ProviderIMAP, p.Name())
+
+	// An imap account with no `imap:` block is a config error that Validate
+	// catches; the factory refuses it too rather than dialling nowhere.
+	_, err = DefaultProviderFactory(context.Background(), &config.Account{Name: "x", Provider: config.ProviderIMAP})
 	require.Error(t, err)
 }
 

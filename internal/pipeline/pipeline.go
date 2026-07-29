@@ -14,6 +14,7 @@ import (
 	"github.com/craigjmidwinter/mail-muncher/internal/model"
 	"github.com/craigjmidwinter/mail-muncher/internal/provider"
 	"github.com/craigjmidwinter/mail-muncher/internal/provider/gmail"
+	"github.com/craigjmidwinter/mail-muncher/internal/provider/imap"
 	"github.com/craigjmidwinter/mail-muncher/internal/sink"
 	"github.com/craigjmidwinter/mail-muncher/internal/state"
 )
@@ -30,7 +31,11 @@ import (
 type ProviderFactory func(ctx context.Context, account *config.Account) (provider.Provider, error)
 
 // DefaultProviderFactory dispatches on the account's `provider:` key. Gmail is
-// the only backend today, and the default when the key is omitted.
+// the default when the key is omitted.
+//
+// This switch is the only place outside internal/provider that names a
+// backend, and adding one must stay a single case here — see
+// docs/architecture.md on the provider seam.
 func DefaultProviderFactory(ctx context.Context, account *config.Account) (provider.Provider, error) {
 	if account == nil {
 		return nil, errors.New("pipeline: nil account")
@@ -38,6 +43,8 @@ func DefaultProviderFactory(ctx context.Context, account *config.Account) (provi
 	switch account.Provider {
 	case config.ProviderGmail, "":
 		return gmail.NewFromAccount(ctx, account)
+	case config.ProviderIMAP:
+		return imap.NewFromAccount(ctx, account)
 	default:
 		return nil, fmt.Errorf("pipeline: account %q: unsupported provider %q", account.Name, account.Provider)
 	}

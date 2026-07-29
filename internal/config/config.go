@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,13 +20,27 @@ const (
 	// It is expanded like any other path field.
 	DefaultStateDir = "~/.local/state/mail-muncher"
 
-	// DefaultInitialLookback is the `gmail.initial_lookback` used when the key
-	// is omitted: how far back a first-ever sync reaches (30 days).
+	// DefaultInitialLookback is the `initial_lookback` used when the key is
+	// omitted, on either provider: how far back a first-ever sync reaches
+	// (30 days).
 	DefaultInitialLookback = "720h"
 
-	// ProviderGmail is the only provider recognized today. It is also the
-	// default when `provider` is omitted.
+	// ProviderGmail selects the Gmail API backend. It is also the default when
+	// `provider` is omitted.
 	ProviderGmail = "gmail"
+
+	// ProviderIMAP selects the generic IMAP backend: any host that speaks
+	// IMAP4rev1/rev2, authenticated with a username and a secret produced by
+	// `imap.password_cmd`.
+	ProviderIMAP = "imap"
+
+	// DefaultIMAPPort is the `imap.port` used when the key is omitted: 993,
+	// the implicit-TLS IMAPS port, matching the `imap.tls: true` default.
+	DefaultIMAPPort = 993
+
+	// DefaultIMAPMailbox is the sole entry of `imap.mailboxes` when the key is
+	// omitted.
+	DefaultIMAPMailbox = "INBOX"
 
 	// QuarantineDirName is the sub-directory of `state_dir` that `quarantine_dir`
 	// defaults to.
@@ -162,12 +178,15 @@ type Config struct {
 type Account struct {
 	// Name is the unique identifier rules refer to via `Rule.Account`.
 	Name string `yaml:"name"`
-	// Provider selects the fetch backend. Only ProviderGmail is recognized;
-	// it is also the default when the key is omitted.
+	// Provider selects the fetch backend: ProviderGmail or ProviderIMAP.
+	// Gmail is the default when the key is omitted.
 	Provider string `yaml:"provider"`
-	// Gmail carries the provider-specific settings; required (and only
-	// meaningful) when Provider is ProviderGmail.
+	// Gmail carries the Gmail settings; required — and only permitted — when
+	// Provider is ProviderGmail.
 	Gmail *GmailConfig `yaml:"gmail"`
+	// IMAP carries the IMAP settings; required — and only permitted — when
+	// Provider is ProviderIMAP.
+	IMAP *IMAPConfig `yaml:"imap"`
 }
 
 // GmailConfig holds the Gmail provider settings for one account.
@@ -215,6 +234,96 @@ func (g *GmailConfig) IncludesSpamTrash() bool {
 func (g *GmailConfig) InitialLookbackDuration() time.Duration {
 	if g != nil && g.InitialLookback != "" {
 		if d, err := time.ParseDuration(g.InitialLookback); err == nil {
+			return d
+		}
+	}
+	d, _ := time.ParseDuration(DefaultInitialLookback)
+	return d
+}
+
+// IMAPConfig holds the IMAP provider settings for one account.
+//
+// There is deliberately no `password` key. The secret is produced by running
+// PasswordCmd and reading its stdout, so the credential lives wherever the
+// user's password manager keeps it and never in a file mail-muncher reads,
+// copies, or logs.
+type IMAPConfig struct {
+	// Host is the IMAP server hostname, e.g. `imap.fastmail.com`.
+	Host string `yaml:"host"`
+	// Port is the IMAP port. Load defaults it to DefaultIMAPPort (993); read
+	// it through PortOrDefault.
+	Port int `yaml:"port"`
+	// Username is the login name, usually the full email address.
+	Username string `yaml:"username"`
+	// PasswordCmd is a shell command whose stdout is the password (an app
+	// password, normally). It is run once per fetch with `/bin/sh -c`, so a
+	// pipeline works: `pass show mail/fastmail | head -n 1`. Trailing newlines
+	// are stripped; empty output is an error.
+	PasswordCmd string `yaml:"password_cmd"`
+	// Mailboxes are the folders to fetch from, each tracked independently.
+	// Load defaults it to [DefaultIMAPMailbox]; read it through MailboxList.
+	//
+	// A mailbox name is also the `label` predicate value on every message it
+	// delivers, so `label: INBOX` selects mail from the INBOX folder exactly
+	// as it selects the Gmail label of that name.
+	Mailboxes []string `yaml:"mailboxes"`
+	// TLS chooses implicit TLS (IMAPS) on connect. It defaults to true, which
+	// is why it is a pointer: an omitted key and an explicit `tls: false` must
+	// not look the same. Read it through TLSEnabled.
+	TLS *bool `yaml:"tls"`
+	// InitialLookback is a Go duration string bounding how far back a
+	// first-ever sync — and any resync forced by a UIDVALIDITY change —
+	// reaches. Load defaults it to DefaultInitialLookback; use
+	// InitialLookbackDuration to parse it.
+	InitialLookback string `yaml:"initial_lookback"`
+}
+
+// TLSEnabled is the effective `imap.tls`: true unless the account explicitly
+// set it to false.
+//
+// It is the accessor every consumer must use, so an IMAPConfig built in code
+// behaves exactly like one Load defaulted — and so the safe value is the one
+// you get by saying nothing.
+func (c *IMAPConfig) TLSEnabled() bool {
+	if c == nil || c.TLS == nil {
+		return true
+	}
+	return *c.TLS
+}
+
+// PortOrDefault is the effective `imap.port`: the configured value, or
+// DefaultIMAPPort when the key was omitted.
+func (c *IMAPConfig) PortOrDefault() int {
+	if c == nil || c.Port <= 0 {
+		return DefaultIMAPPort
+	}
+	return c.Port
+}
+
+// MailboxList is the effective `imap.mailboxes`: the configured folders, or
+// [DefaultIMAPMailbox] when the key was omitted. The returned slice is a copy.
+func (c *IMAPConfig) MailboxList() []string {
+	if c == nil || len(c.Mailboxes) == 0 {
+		return []string{DefaultIMAPMailbox}
+	}
+	return append([]string(nil), c.Mailboxes...)
+}
+
+// Addr is the `host:port` the provider dials.
+func (c *IMAPConfig) Addr() string {
+	if c == nil {
+		return ""
+	}
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.PortOrDefault()))
+}
+
+// InitialLookbackDuration parses InitialLookback, falling back to
+// DefaultInitialLookback when the field is empty or malformed. Validate
+// reports malformed values as errors, so a validated config never falls back
+// on account of a parse failure.
+func (c *IMAPConfig) InitialLookbackDuration() time.Duration {
+	if c != nil && c.InitialLookback != "" {
+		if d, err := time.ParseDuration(c.InitialLookback); err == nil {
 			return d
 		}
 	}
@@ -373,6 +482,24 @@ func (c *Config) applyDefaults() {
 		a.Provider = strings.ToLower(strings.TrimSpace(a.Provider))
 		if a.Gmail != nil && strings.TrimSpace(a.Gmail.InitialLookback) == "" {
 			a.Gmail.InitialLookback = DefaultInitialLookback
+		}
+		if m := a.IMAP; m != nil {
+			if strings.TrimSpace(m.InitialLookback) == "" {
+				m.InitialLookback = DefaultInitialLookback
+			}
+			if m.Port == 0 {
+				m.Port = DefaultIMAPPort
+			}
+			if len(m.Mailboxes) == 0 {
+				m.Mailboxes = []string{DefaultIMAPMailbox}
+			}
+			// TLS is written out explicitly so a loaded config says what it
+			// does; the accessor still defaults a nil for configs built in
+			// code. A negative port is left alone for Validate to report.
+			if m.TLS == nil {
+				on := true
+				m.TLS = &on
+			}
 		}
 	}
 

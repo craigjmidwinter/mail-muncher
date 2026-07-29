@@ -379,9 +379,11 @@ accounts:
   - name: ""
     gmail: {credentials_file: "", token_file: ""}
   - name: bad-provider
-    provider: imap
+    provider: pigeon
   - name: no-gmail-block
     provider: gmail
+  - name: no-imap-block
+    provider: imap
 rules:
   - name: ""
     dest: ""
@@ -395,6 +397,7 @@ rules:
 		"accounts[0].gmail.token_file",
 		"accounts[1].provider",
 		"accounts[2].gmail",
+		"accounts[3].imap",
 		"rules[0].name",
 		"rules[0].dest",
 		"rules[0].match",
@@ -641,4 +644,209 @@ func TestPolicyAccessorsDefaultForConfigsBuiltInCode(t *testing.T) {
 	require.Equal(t, DefaultMessageFailure, nilCfg.MessageFailure())
 	require.Equal(t, DefaultDegradedFilter, nilCfg.DegradedFilter())
 	require.Empty(t, nilCfg.QuarantineRoot())
+}
+
+// --- the imap: block ---------------------------------------------------------
+
+func TestLoadIMAPAccount(t *testing.T) {
+	path := write(t, `
+accounts:
+  - name: fastmail
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      port: 143
+      username: someone@fastmail.com
+      password_cmd: pass show mail/fastmail
+      mailboxes: [INBOX, Archive]
+      tls: false
+      initial_lookback: 168h
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	m := cfg.Accounts[0].IMAP
+	require.NotNil(t, m)
+	require.Nil(t, cfg.Accounts[0].Gmail)
+	require.Equal(t, "imap.fastmail.com", m.Host)
+	require.Equal(t, 143, m.PortOrDefault())
+	require.Equal(t, "someone@fastmail.com", m.Username)
+	require.Equal(t, "pass show mail/fastmail", m.PasswordCmd)
+	require.Equal(t, []string{"INBOX", "Archive"}, m.MailboxList())
+	require.False(t, m.TLSEnabled())
+	require.Equal(t, 168*time.Hour, m.InitialLookbackDuration())
+	require.Equal(t, "imap.fastmail.com:143", m.Addr())
+}
+
+// The three defaults that decide what an omitted key means. `tls` is the one
+// that matters: omitted must mean encrypted, never the reverse.
+func TestLoadIMAPDefaults(t *testing.T) {
+	path := write(t, `
+accounts:
+  - name: fastmail
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      username: someone@fastmail.com
+      password_cmd: true
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+
+	m := cfg.Accounts[0].IMAP
+	require.Equal(t, DefaultIMAPPort, m.Port)
+	require.Equal(t, []string{DefaultIMAPMailbox}, m.Mailboxes)
+	require.NotNil(t, m.TLS)
+	require.True(t, *m.TLS)
+	require.Equal(t, DefaultInitialLookback, m.InitialLookback)
+	require.Equal(t, "imap.fastmail.com:993", m.Addr())
+
+	require.Empty(t, Validate(cfg).Errors())
+}
+
+// The accessors must not depend on Load having run, or a config built in code
+// would silently fetch over plaintext.
+func TestIMAPAccessorsDefaultForConfigsBuiltInCode(t *testing.T) {
+	m := &IMAPConfig{Host: "h"}
+	require.True(t, m.TLSEnabled(), "omitting tls must mean encrypted")
+	require.Equal(t, DefaultIMAPPort, m.PortOrDefault())
+	require.Equal(t, []string{DefaultIMAPMailbox}, m.MailboxList())
+	require.Equal(t, 720*time.Hour, m.InitialLookbackDuration())
+
+	var nilCfg *IMAPConfig
+	require.True(t, nilCfg.TLSEnabled())
+	require.Equal(t, DefaultIMAPPort, nilCfg.PortOrDefault())
+	require.Equal(t, []string{DefaultIMAPMailbox}, nilCfg.MailboxList())
+	require.Empty(t, nilCfg.Addr())
+
+	// MailboxList hands back a copy: a caller must not be able to edit the
+	// config through it.
+	m.Mailboxes = []string{"INBOX"}
+	got := m.MailboxList()
+	got[0] = "Trash"
+	require.Equal(t, []string{"INBOX"}, m.Mailboxes)
+}
+
+// There is deliberately no plaintext password key. If one is ever added by
+// accident, KnownFields makes this test fail rather than let a secret into a
+// config file.
+func TestLoadRejectsIMAPPasswordKey(t *testing.T) {
+	path := write(t, `
+accounts:
+  - name: fastmail
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      username: someone@fastmail.com
+      password: hunter2
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	_, err := Load(path)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "password")
+}
+
+func TestValidateIMAPRequiredFields(t *testing.T) {
+	cfg := loadForValidation(t, `
+accounts:
+  - name: empty
+    provider: imap
+    imap:
+      host: ""
+      username: ""
+      password_cmd: ""
+      port: 70000
+      mailboxes: ["INBOX", "", "INBOX"]
+      initial_lookback: "a fortnight"
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	ps := Validate(cfg)
+	for _, field := range []string{
+		"accounts[0].imap.host",
+		"accounts[0].imap.username",
+		"accounts[0].imap.password_cmd",
+		"accounts[0].imap.port",
+		"accounts[0].imap.mailboxes[1]",
+		"accounts[0].imap.initial_lookback",
+	} {
+		require.Truef(t, hasProblem(ps, SeverityError, field), "expected an error for %s, got %v", field, ps)
+	}
+	require.True(t, hasProblem(ps, SeverityWarning, "accounts[0].imap.mailboxes[2]"), "duplicate mailbox should warn")
+}
+
+// A block belonging to the other provider is an error, not something to
+// ignore: dropping `gmail.query` off an IMAP account silently would leave the
+// user believing a pre-filter is in force that is not.
+func TestValidateRejectsMismatchedProviderBlocks(t *testing.T) {
+	cfg := loadForValidation(t, `
+accounts:
+  - name: imap-with-gmail
+    provider: imap
+    imap: {host: h, username: u, password_cmd: c}
+    gmail: {credentials_file: /a, token_file: /b}
+  - name: gmail-with-imap
+    provider: gmail
+    gmail: {credentials_file: /a, token_file: /b}
+    imap: {host: h, username: u, password_cmd: c}
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	ps := Validate(cfg)
+	require.True(t, hasProblem(ps, SeverityError, "accounts[0].gmail"), "got %v", ps)
+	require.True(t, hasProblem(ps, SeverityError, "accounts[1].imap"), "got %v", ps)
+}
+
+// Turning TLS off is legal — a loopback or an stunnel in front — but it sends
+// the app password in the clear, so it says so.
+func TestValidateIMAPWarnsOnPlaintext(t *testing.T) {
+	cfg := loadForValidation(t, `
+accounts:
+  - name: local
+    provider: imap
+    imap: {host: 127.0.0.1, port: 143, username: u, password_cmd: c, tls: false}
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	ps := Validate(cfg)
+	require.False(t, ps.HasErrors(), "plaintext is legal, just loud: %v", ps.Errors())
+	require.True(t, hasProblem(ps, SeverityWarning, "accounts[0].imap.tls"))
+}
+
+// The IMAP path must not need any file to exist: that is the whole point of it
+// next to the Gmail path, which cannot validate clean until `auth` has run.
+func TestValidateIMAPAccountIsCleanWithNoFilesOnDisk(t *testing.T) {
+	cfg := loadForValidation(t, `
+accounts:
+  - name: fastmail
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      username: someone@fastmail.com
+      password_cmd: pass show mail/fastmail
+rules:
+  - name: r
+    match: {label: INBOX}
+    dest: /tmp/mail
+`)
+	ps := Validate(cfg)
+	require.Empty(t, ps.Errors(), "%v", ps)
+	require.Empty(t, ps.Warnings(), "an imap account should validate without a single warning: %v", ps)
 }

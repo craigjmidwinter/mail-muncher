@@ -1,0 +1,111 @@
+# mail-muncher — any IMAP mailbox, no Google Cloud Console
+#
+# The short road in. There is no OAuth client to register, no consent screen,
+# and no `auth` step: an app password from your mail provider's settings page
+# is the whole credential. Everything downstream — rules, formats, filenames,
+# the archive layout — is identical to the Gmail path.
+#
+# Try it:
+#
+#   mail-muncher validate --config examples/imap.yml
+#   mail-muncher run      --config examples/imap.yml --dry-run
+#   mail-muncher run      --config examples/imap.yml
+#
+# There is no `auth` command in that list, and that is the point.
+#
+# See docs/configuration.md for every key and docs/filters.md for the match
+# tree language.
+
+# Where sync cursors and the cycle lockfile live. One JSON file per account.
+# For IMAP each mailbox gets its own cursor inside that file, as a
+# uidvalidity/last_uid pair. Delete the file to force a full re-scan.
+state_dir: ~/.local/state/mail-muncher
+
+accounts:
+  - # Referenced by `rules[].account` and used as the state file name.
+    # Renaming it changes every future filename, so pick one and keep it.
+    name: personal
+
+    # "imap" selects the generic IMAP backend. Omit this key and you get
+    # "gmail", which needs an OAuth client you register yourself.
+    provider: imap
+
+    imap:
+      # Your provider's IMAP hostname. A few common ones:
+      #   Fastmail   imap.fastmail.com
+      #   iCloud     imap.mail.me.com
+      #   Gmail      imap.gmail.com   (requires 2FA + an app password)
+      #   Proton     127.0.0.1        (via the Bridge — see `tls` below)
+      host: imap.fastmail.com
+
+      # 993 is implicit TLS (IMAPS) and the default; you can omit this.
+      port: 993
+
+      # Usually the full address. Check your provider's IMAP settings page —
+      # a few want only the local part.
+      username: you@fastmail.com
+
+      # THERE IS NO `password` KEY, on purpose. mail-muncher runs this command
+      # and reads the secret from its stdout, so the credential stays wherever
+      # your password manager already keeps it — not in this file, not in a
+      # file mail-muncher copies, not in your shell history.
+      #
+      # It runs under `/bin/sh -c`, so pipes and quoting work. Pick yours:
+      #
+      #   password_cmd: pass show mail/fastmail
+      #   password_cmd: security find-generic-password -s fastmail -w
+      #   password_cmd: op read op://Private/Fastmail/app-password
+      #   password_cmd: gpg --quiet --decrypt ~/.secrets/fastmail.gpg
+      #
+      # Use an APP PASSWORD, not your account password: it is scoped to this
+      # one use and you can revoke it without touching anything else.
+      password_cmd: pass show mail/fastmail
+
+      # The folders to fetch, each with its own independent cursor. Defaults to
+      # [INBOX] when omitted.
+      #
+      # A mailbox name doubles as the `label` predicate value, so `label: Archive`
+      # below works exactly as `label: <gmail label>` does on the Gmail path.
+      # Names are the server's, verbatim, including its hierarchy separator
+      # (usually "/" or "."). A folder the server does not have is an error, not
+      # an empty folder, so a typo surfaces on the first run.
+      mailboxes: [INBOX, Archive]
+
+      # Implicit TLS on connect. Defaults to true; leave it alone.
+      #
+      # Setting it false sends the app password and every message body in the
+      # clear, and `validate` warns about it. The two legitimate reasons are a
+      # server on loopback (the Proton Bridge, say, with `port: 1143`) and one
+      # already behind an stunnel.
+      tls: true
+
+      # How far back a first-ever sync of each mailbox reaches, as a Go
+      # duration. Default when omitted: 720h (30 days). Go durations have no
+      # day unit — 90 days is 2160h, a year is 8760h.
+      #
+      # It applies again if the server's UIDVALIDITY ever changes, which is the
+      # protocol announcing that every UID we remember now names a different
+      # message. See docs/configuration.md#how-imap-sync-works.
+      initial_lookback: 720h
+
+rules:
+  # Rules are evaluated in config order; the first match claims the message.
+  # Nothing here is IMAP-specific, which is the whole idea: swapping providers
+  # does not touch this half of the file.
+  - name: receipts
+    account: personal
+    match:
+      any:
+        - from_domains: [stripe.com, squareup.com, amazon.com]
+        - subject_regex: "(?i)\\b(receipt|invoice|order confirmation)\\b"
+    dest: ~/Mail/receipts
+    formats: [eml, markdown]
+
+  # `label` matches the mailbox a message came from, so this rule sweeps up
+  # whatever else is in the Archive folder that the receipts rule did not take.
+  - name: archive-folder
+    account: personal
+    match:
+      label: Archive
+    dest: ~/Mail/archive
+    formats: [eml]

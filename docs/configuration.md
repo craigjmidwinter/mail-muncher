@@ -69,6 +69,17 @@ accounts:
       initial_lookback: 2160h
       include_spam_trash: false
 
+  - name: fastmail
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      port: 993
+      username: you@fastmail.com
+      password_cmd: pass show mail/fastmail
+      mailboxes: [INBOX, Archive]
+      tls: true
+      initial_lookback: 720h
+
 rules:
   - name: job-search
     account: personal
@@ -88,8 +99,9 @@ rules:
     formats: [eml]
 ```
 
-Two runnable configs ship in the repo: [`examples/minimal.yml`](../examples/minimal.yml)
-and [`examples/job-search.yml`](../examples/job-search.yml).
+Three runnable configs ship in the repo: [`examples/minimal.yml`](../examples/minimal.yml),
+[`examples/imap.yml`](../examples/imap.yml), and
+[`examples/job-search.yml`](../examples/job-search.yml).
 
 ## Top level
 
@@ -170,25 +182,54 @@ error: accounts[1].name: duplicate account name "personal" (already defined at a
 
 - **Type:** string
 - **Default:** `gmail`
-- **Valid values:** `gmail`
+- **Valid values:** `gmail`, `imap`
 
 Lowercased and trimmed on load, so `Gmail` and ` gmail ` both work. Anything
 else is an error:
 
 ```
-error: accounts[0].provider: unknown provider "imap" (known providers: gmail)
+error: accounts[0].provider: unknown provider "pigeon" (known providers: gmail, imap)
 ```
 
-IMAP is planned but not implemented; there is no `imap:` block to configure.
+The two differ in what they cost you to set up, not in what they can archive.
+Both hand the pipeline complete RFC822 bytes, so rules, formats, filenames and
+the archive layout are identical either way.
+
+| | `gmail` | `imap` |
+| --- | --- | --- |
+| Credential | your own OAuth client, registered in the Google Cloud Console | an app password from your mail provider's settings page |
+| Setup | [docs/gmail-setup.md](gmail-setup.md), then `mail-muncher auth` | paste two lines into the config |
+| Where the secret lives | a token file mail-muncher writes | wherever your password manager keeps it; `password_cmd` fetches it |
+| Incremental sync | `users.history` cursor | per-mailbox UID cursor |
+| `label:` predicate matches | Gmail label names | mailbox (folder) names |
+| Works with | Gmail only | Fastmail, iCloud, a work server, self-hosted, and Gmail with IMAP enabled |
+
+mail-muncher ships no OAuth client and cannot ship one — see
+[gmail-setup.md](gmail-setup.md) — so `imap` is the shorter road in.
 
 ### `accounts[].gmail`
 
 - **Type:** mapping
-- **Required** when the provider is `gmail`, which is to say always.
+- **Required** when the provider is `gmail`, and only then.
 
 ```
 error: accounts[0].gmail: required for provider "gmail"
+error: accounts[0].gmail: must not be set on a "imap" account (remove it, or set provider: gmail)
 ```
+
+### `accounts[].imap`
+
+- **Type:** mapping
+- **Required** when the provider is `imap`, and only then.
+
+```
+error: accounts[0].imap: required for provider "imap"
+error: accounts[0].imap: must not be set on a "gmail" account (remove it, or set provider: imap)
+```
+
+A block belonging to the other provider is an error rather than an ignored key.
+Silently dropping a `gmail:` block off an account that fetches over IMAP would
+leave you believing `gmail.query` is filtering something.
 
 ## `accounts[].gmail`
 
@@ -349,6 +390,192 @@ days is `2160h`, a year is `8760h`.
 error: accounts[0].gmail.initial_lookback: invalid duration "30d" (want a Go duration such as "720h")
 error: accounts[0].gmail.initial_lookback: must be positive, got "-1h"
 ```
+
+## `accounts[].imap`
+
+Every key in this block belongs to `provider: imap`. A runnable file is
+[`examples/imap.yml`](../examples/imap.yml).
+
+```yaml
+accounts:
+  - name: personal
+    provider: imap
+    imap:
+      host: imap.fastmail.com
+      port: 993
+      username: you@fastmail.com
+      password_cmd: pass show mail/fastmail
+      mailboxes: [INBOX]
+      tls: true
+      initial_lookback: 720h
+```
+
+### `host`
+
+- **Type:** string
+- **Required.**
+
+The IMAP server hostname: `imap.fastmail.com`, `imap.mail.me.com`,
+`imap.gmail.com`, whatever your provider documents.
+
+```
+error: accounts[0].imap.host: must not be empty
+```
+
+### `port`
+
+- **Type:** integer
+- **Default:** `993`
+
+993 is the implicit-TLS (IMAPS) port, which pairs with the `tls: true`
+default. Use 143 only with `tls: false`, and read that key's warning first.
+
+```
+error: accounts[0].imap.port: must be between 1 and 65535, got 70000
+```
+
+### `username`
+
+- **Type:** string
+- **Required.**
+
+Usually the full email address. Whatever your provider's IMAP settings page
+calls the username — some providers want a bare local part.
+
+### `password_cmd`
+
+- **Type:** shell command
+- **Required.**
+
+**There is deliberately no `password` key.** mail-muncher runs this command and
+reads the secret from its stdout, so the credential lives wherever your password
+manager already keeps it: not in a config file you might commit, not in a file
+mail-muncher copies, and not in a backup that outlives your memory of it.
+
+```yaml
+password_cmd: pass show mail/fastmail
+password_cmd: security find-generic-password -s fastmail -w
+password_cmd: op read op://Private/Fastmail/app-password
+password_cmd: cat ~/.config/mail-muncher/fastmail.secret   # if you insist
+```
+
+The command runs under `/bin/sh -c`, once per fetch, so pipes and quoting work
+as written. Trailing newlines are stripped — every password manager prints one
+and none of them mean it. Nothing else is trimmed, since a real secret may
+start or end with a space.
+
+Use an **app password**, not your account password. Every provider that offers
+IMAP offers one, it is scoped to this use, and you can revoke it without
+changing anything else. Where Gmail is concerned, an app password requires
+2-Step Verification and IMAP enabled in Gmail's settings.
+
+Failures are reported with the command as written, so a typo is obvious:
+
+```
+error: imap: password_cmd "pass show mail/fastmail" failed: exit status 1: Error: mail/fastmail is not in the password store.
+error: imap: password_cmd "pass show mail/fastmail" produced no output on stdout; it must print the password there
+```
+
+A command that hangs — a `gpg` waiting for a pinentry nobody will answer —
+is given two minutes and then abandoned. The command is run with no stdin, so
+anything that tries to prompt on the terminal fails instead of blocking a
+daemon forever.
+
+### `mailboxes`
+
+- **Type:** list of strings
+- **Default:** `[INBOX]`
+
+The folders to fetch, each tracked with its own independent cursor. Order is
+the order they are fetched in.
+
+**A mailbox name is also the `label` predicate value** on every message it
+delivers, so a rule reads the same as it would on Gmail:
+
+```yaml
+mailboxes: [INBOX, Archive, "Lists/golang"]
+```
+
+```yaml
+match:
+  label: Archive
+```
+
+Names are the server's, verbatim, including its hierarchy separator — usually
+`/` or `.`. `mail-muncher` does not guess: a folder the server does not have is
+an error, not an empty folder, so a typo shows up on the first run instead of
+looking like a quiet mailbox.
+
+```
+error: accounts[0].imap.mailboxes[1]: must not be empty
+warning: accounts[0].imap.mailboxes[2]: duplicate mailbox "INBOX" (already listed at accounts[0].imap.mailboxes[0])
+```
+
+### `tls`
+
+- **Type:** boolean
+- **Default:** `true`
+
+Implicit TLS on connect (IMAPS). Leave it alone.
+
+Setting it to `false` sends the password from `password_cmd`, and every message
+body, in the clear. There are two legitimate reasons — a server on loopback, or
+one already behind an stunnel — and `validate` says so either way:
+
+```
+warning: accounts[0].imap.tls: false sends the password from password_cmd, and every message, unencrypted; only do this over a loopback or an already-encrypted tunnel
+```
+
+The certificate is verified against the system roots. There is no
+"skip verification" key and there will not be one.
+
+### `initial_lookback`
+
+- **Type:** Go duration string (`720h`, `2160h`)
+- **Default:** `720h` (30 days)
+- **Must be positive.**
+
+Bounds how far back a **first-ever** sync of a mailbox reaches, so a first run
+does not trawl a decade of folder. It becomes a `SINCE` term in a UID search.
+
+It applies twice: on the first cycle for a mailbox, and again on any cycle where
+the server's UIDVALIDITY has changed — which is the protocol announcing that
+every UID mail-muncher remembers now names a different message. Steady-state
+cycles ignore it and resume from the stored UID.
+
+```
+error: accounts[0].imap.initial_lookback: invalid duration "30d" (want a Go duration such as "720h")
+```
+
+### How IMAP sync works
+
+Worth knowing before you go looking in a state file.
+
+Each mailbox gets two keys in the account's state, written as a pair:
+
+```json
+"extra": {
+  "imap.INBOX.uidvalidity": "1650000000",
+  "imap.INBOX.last_uid": "48213"
+}
+```
+
+A cycle whose stored UIDVALIDITY still matches the server's asks for
+`UID FETCH 48214:*` — only what arrived since. A cycle that finds it changed
+throws the UID away and resyncs from `initial_lookback`. That resync
+re-archives the window it covers under new filenames, because a message's
+identity is `<account>:<mailbox>:<uidvalidity>:<uid>` and the UIDVALIDITY in
+there is what stops the new UID 5 being mistaken for the old one. Duplicated
+mail can be deleted; mail silently skipped cannot be recovered.
+
+**Nothing is ever marked read.** Folders are opened with `EXAMINE`, not
+`SELECT`, and bodies are fetched with `BODY.PEEK[]`, not `BODY[]`. There is no
+code path that issues `STORE`, `APPEND`, or `EXPUNGE`.
+
+IMAP has no conversation id, so `thread_id` in the markdown frontmatter is
+derived from the message's `References`/`In-Reply-To` chain rather than handed
+over by the server. Threading behaves the same downstream; it is just computed
+locally.
 
 ## `rules`
 

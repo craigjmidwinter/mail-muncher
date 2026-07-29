@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.2
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/gofrs/flock v0.13.0
 	github.com/jhillyerd/enmime/v2 v2.4.1
 	github.com/modelcontextprotocol/go-sdk v1.7.0
@@ -24,6 +25,8 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/emersion/go-message v0.18.2 // indirect
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect

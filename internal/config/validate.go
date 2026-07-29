@@ -179,16 +179,34 @@ func validateAccounts(cfg *Config, add addFunc) map[string]bool {
 			}
 		}
 
-		if a.Provider != ProviderGmail {
-			add(SeverityError, field+".provider", "unknown provider %q (known providers: %s)", a.Provider, ProviderGmail)
+		// Exactly one provider block, and it must be the one the `provider:` key
+		// names. A block belonging to the other provider is an error rather
+		// than something to ignore: silently dropping `gmail.query` off an
+		// account that fetches over IMAP would leave the user believing a
+		// filter is in force that is not.
+		switch a.Provider {
+		case ProviderGmail:
+			if a.IMAP != nil {
+				add(SeverityError, field+".imap", "must not be set on a %q account (remove it, or set provider: %s)", ProviderGmail, ProviderIMAP)
+			}
+			if a.Gmail == nil {
+				add(SeverityError, field+".gmail", "required for provider %q", ProviderGmail)
+				continue
+			}
+			validateGmail(a.Gmail, field+".gmail", add)
+		case ProviderIMAP:
+			if a.Gmail != nil {
+				add(SeverityError, field+".gmail", "must not be set on a %q account (remove it, or set provider: %s)", ProviderIMAP, ProviderGmail)
+			}
+			if a.IMAP == nil {
+				add(SeverityError, field+".imap", "required for provider %q", ProviderIMAP)
+				continue
+			}
+			validateIMAP(a.IMAP, field+".imap", add)
+		default:
+			add(SeverityError, field+".provider", "unknown provider %q (known providers: %s, %s)", a.Provider, ProviderGmail, ProviderIMAP)
 			continue
 		}
-
-		if a.Gmail == nil {
-			add(SeverityError, field+".gmail", "required for provider %q", ProviderGmail)
-			continue
-		}
-		validateGmail(a.Gmail, field+".gmail", add)
 	}
 
 	return names
@@ -208,12 +226,7 @@ func validateGmail(g *GmailConfig, field string, add addFunc) {
 		add(SeverityWarning, field+".token_file", "file does not exist yet: %s (run `mail-muncher auth`)", g.TokenFile)
 	}
 
-	switch d, err := time.ParseDuration(g.InitialLookback); {
-	case err != nil:
-		add(SeverityError, field+".initial_lookback", "invalid duration %q (want a Go duration such as %q)", g.InitialLookback, DefaultInitialLookback)
-	case d <= 0:
-		add(SeverityError, field+".initial_lookback", "must be positive, got %q", g.InitialLookback)
-	}
+	validateLookback(g.InitialLookback, field+".initial_lookback", add)
 
 	// Opting in is legitimate — recovering a misfiled message is the usual
 	// reason — but it is worth saying out loud, because the mail it admits is
@@ -221,6 +234,70 @@ func validateGmail(g *GmailConfig, field string, add addFunc) {
 	if g.IncludesSpamTrash() {
 		add(SeverityWarning, field+".include_spam_trash",
 			"true feeds Spam and Trash to your rules, and anything they match reaches an AI agent's context window; exclude it again with a rule on the SPAM and TRASH labels if you only wanted Trash")
+	}
+}
+
+// validateIMAP checks one account's imap block.
+func validateIMAP(m *IMAPConfig, field string, add addFunc) {
+	if strings.TrimSpace(m.Host) == "" {
+		add(SeverityError, field+".host", "must not be empty")
+	}
+	if p := m.Port; p != 0 && (p < 1 || p > 65535) {
+		add(SeverityError, field+".port", "must be between 1 and 65535, got %d", p)
+	}
+	if strings.TrimSpace(m.Username) == "" {
+		add(SeverityError, field+".username", "must not be empty")
+	}
+
+	// There is no plaintext `password` key to fall back on, by design, so an
+	// empty command is not "no authentication" — it is an account that cannot
+	// log in. Say what to put there.
+	if strings.TrimSpace(m.PasswordCmd) == "" {
+		add(SeverityError, field+".password_cmd",
+			"must not be empty: mail-muncher has no plaintext password key, so the secret comes from this command's stdout (e.g. `pass show mail/%s`)", m.Username)
+	}
+
+	seen := make(map[string]int, len(m.Mailboxes))
+	for i, name := range m.Mailboxes {
+		mf := fmt.Sprintf("%s.mailboxes[%d]", field, i)
+		switch {
+		case strings.TrimSpace(name) == "":
+			add(SeverityError, mf, "must not be empty")
+		default:
+			if first, dup := seen[name]; dup {
+				add(SeverityWarning, mf, "duplicate mailbox %q (already listed at %s.mailboxes[%d])", name, field, first)
+			} else {
+				seen[name] = i
+			}
+		}
+	}
+
+	validateLookback(m.InitialLookback, field+".initial_lookback", add)
+
+	// Turning TLS off is legitimate on a loopback or stunnel-fronted server,
+	// but it is worth saying out loud: without it the app password and every
+	// message body cross the network in the clear.
+	if !m.TLSEnabled() {
+		add(SeverityWarning, field+".tls",
+			"false sends the password from password_cmd, and every message, unencrypted; only do this over a loopback or an already-encrypted tunnel")
+	}
+}
+
+// validateLookback checks an `initial_lookback` on either provider.
+//
+// An empty value is omission, not an error: Load fills it with
+// DefaultInitialLookback, and the InitialLookbackDuration accessors default it
+// again for configs built in code. Reporting it would only ever fire on the
+// latter, where the answer is already correct.
+func validateLookback(value, field string, add addFunc) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	switch d, err := time.ParseDuration(value); {
+	case err != nil:
+		add(SeverityError, field, "invalid duration %q (want a Go duration such as %q)", value, DefaultInitialLookback)
+	case d <= 0:
+		add(SeverityError, field, "must be positive, got %q", value)
 	}
 }
 
