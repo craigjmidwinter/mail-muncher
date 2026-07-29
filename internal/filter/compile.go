@@ -28,35 +28,40 @@ type Option func(*options)
 
 // options are the resolved settings a compile runs with.
 type options struct {
-	files *DomainFiles
+	files *Files
 	now   func() time.Time
-	// domainFiles collects every `from_domains_file` path the compile saw, in
-	// first-use order and deduplicated, so an Engine can read them all up front
-	// and report the ones it could not read.
-	domainFiles []string
+	// refs collects every externally-owned file the compile saw, in first-use
+	// order and deduplicated, so an Engine can read them all up front and
+	// report the ones it could not read.
+	refs []FileRef
 }
 
-// referenceDomainFile records a path a compiled predicate will read.
-func (o *options) referenceDomainFile(path string) {
-	for _, seen := range o.domainFiles {
-		if seen == path {
+// reference records a file a compiled predicate will read.
+func (o *options) reference(kind FileKind, path string) {
+	for _, seen := range o.refs {
+		if seen.Kind == kind && seen.Path == path {
 			return
 		}
 	}
-	o.domainFiles = append(o.domainFiles, path)
+	o.refs = append(o.refs, FileRef{Kind: kind, Path: path})
 }
 
-// WithDomainFiles makes every `from_domains_file` predicate in the compiled
-// tree read through the given cache, so that one BeginCycle refreshes them all
-// and a file referenced by several rules is read once per cycle. Compile
-// allocates a private cache when this option is not given.
-func WithDomainFiles(files *DomainFiles) Option {
+// WithFiles makes every file-valued predicate in the compiled tree read through
+// the given cache, so that one BeginCycle refreshes them all and a file
+// referenced by several rules is read once per cycle. Compile allocates a
+// private cache when this option is not given.
+func WithFiles(files *Files) Option {
 	return func(o *options) {
 		if files != nil {
 			o.files = files
 		}
 	}
 }
+
+// WithDomainFiles is the former name of WithFiles.
+//
+// Deprecated: use WithFiles.
+func WithDomainFiles(files *Files) Option { return WithFiles(files) }
 
 // WithClock replaces time.Now for the `older_than` / `newer_than` predicates.
 // It exists for tests.
@@ -77,7 +82,7 @@ func newOptions(opts []Option) *options {
 		}
 	}
 	if o.files == nil {
-		o.files = NewDomainFiles()
+		o.files = NewFiles()
 	}
 	return o
 }
@@ -90,6 +95,7 @@ var (
 		"from_domains",
 		"from_domains_file",
 		"from_regex",
+		"from_regex_file",
 		"has_attachment",
 		"header",
 		"label",
@@ -157,6 +163,8 @@ func compileNode(n *yaml.Node, path string, o *options) (Matcher, error) {
 		return compileFromDomainsFile(value, at, o)
 	case "from_regex":
 		return compileRegex(value, at, func(msg *model.Message) []string { return msg.FromAddresses() })
+	case "from_regex_file":
+		return compileRegexFile(value, at, o, func(msg *model.Message) []string { return msg.FromAddresses() })
 	case "to_regex":
 		return compileRegex(value, at, func(msg *model.Message) []string { return msg.RecipientAddresses() })
 	case "subject_regex":
@@ -245,10 +253,45 @@ func compileFromDomainsFile(n *yaml.Node, path string, o *options) (Matcher, err
 	if strings.TrimSpace(file) == "" {
 		return nil, errAt(path, "path must not be empty")
 	}
-	o.referenceDomainFile(file)
+	o.reference(FileKindDomains, file)
 	files := o.files
 	return MatcherFunc(func(msg *model.Message) bool {
 		return domainsMatch(msg.FromDomains(), files.Domains(file))
+	}), nil
+}
+
+// compileRegexFile compiles a pattern list held in an externally-owned file
+// into a predicate over the strings extract returns. The file is read and its
+// patterns compiled lazily, once per cycle, through the shared cache — never
+// once per message.
+//
+// extract is the only thing that varies between `from_regex_file` and the
+// `to_regex_file` / `subject_regex_file` predicates nobody has asked for yet:
+// the file format, the parser, the guards and the cache entry are all the same,
+// so each of those is one more case in compileNode and nothing else.
+func compileRegexFile(n *yaml.Node, path string, o *options, extract func(*model.Message) []string) (Matcher, error) {
+	file, err := scalar(n, path)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(file) == "" {
+		return nil, errAt(path, "path must not be empty")
+	}
+	o.reference(FileKindPatterns, file)
+	files := o.files
+	return MatcherFunc(func(msg *model.Message) bool {
+		patterns := files.Patterns(file)
+		if len(patterns) == 0 {
+			return false
+		}
+		for _, s := range extract(msg) {
+			for _, re := range patterns {
+				if re.MatchString(s) {
+					return true
+				}
+			}
+		}
+		return false
 	}), nil
 }
 

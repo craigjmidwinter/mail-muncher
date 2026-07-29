@@ -87,14 +87,31 @@ func (ps Problems) Err() error {
 // match node is only checked for presence.
 var MatchValidator func(rule *Rule) error
 
+// FileContentValidator is an optional hook for checking the *contents* of an
+// externally-owned file a match tree points at — a `from_regex_file` holding a
+// pattern that does not compile, say. It is called once per file-valued
+// predicate whose file exists, with the predicate key ("from_regex_file") and
+// the expanded path, and every string it returns becomes one warning against
+// that predicate.
+//
+// internal/filter installs it from an init, because it owns the parsers and
+// config cannot import it without an import cycle.
+//
+// Warnings, never errors: the file belongs to another program, so a bad line in
+// it is a degraded subscription rather than an unusable config. mail-muncher
+// must still start, match on the lines that did parse, and report the rest
+// through `on_degraded_filter`.
+var FileContentValidator func(predicate, path string) []string
+
 // Validate checks a loaded config for semantic problems and returns every
 // finding in config order. It is shared by the `validate` command and by
 // run/daemon startup; callers that only care whether the config is usable can
 // use Problems.Err.
 //
-// Referenced files that another program owns — a rule's `from_domains_file`,
-// the OAuth credential and token files — are warnings when missing, not
-// errors: they may legitimately not exist yet.
+// Referenced files that another program owns — a rule's `from_domains_file` or
+// `from_regex_file`, the OAuth credential and token files — are warnings when
+// missing, not errors: they may legitimately not exist yet. So is a line inside
+// one of them that could not be parsed.
 func Validate(cfg *Config) Problems {
 	var ps Problems
 	if cfg == nil {
@@ -142,7 +159,7 @@ func validatePolicies(cfg *Config, add addFunc) {
 			string(p), DegradedFilterHold, DegradedFilterFail, DegradedFilterProceed)
 	case p == DegradedFilterProceed:
 		add(SeverityWarning, "on_degraded_filter",
-			"%q accepts silent loss: while a `from_domains_file` is unreadable every message is evaluated against an empty list and the cursor advances past it anyway",
+			"%q accepts silent loss: while a `from_domains_file` or `from_regex_file` is unreadable every message is evaluated against an empty list and the cursor advances past it anyway",
 			string(DegradedFilterProceed))
 	}
 
@@ -380,6 +397,12 @@ func validateMatch(r *Rule, field string, add addFunc) {
 		if !fileExists(ref.Value) {
 			add(SeverityWarning, refField,
 				"file does not exist yet: %s (it is maintained by another program; the rule matches nothing until it appears)", ref.Value)
+			continue
+		}
+		if FileContentValidator != nil {
+			for _, problem := range FileContentValidator(ref.Key, ref.Value) {
+				add(SeverityWarning, refField, "%s: %s", ref.Value, problem)
+			}
 		}
 	}
 

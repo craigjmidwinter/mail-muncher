@@ -14,6 +14,7 @@
 //	from_domains: [example.com, ...]   a From domain equals or is a subdomain of one listed
 //	from_domains_file: /path/to/list   same, but the list is read from a file every cycle
 //	from_regex: pattern                RE2 against each From addr-spec
+//	from_regex_file: /path/to/list     same, but the patterns are read from a file every cycle
 //	to_regex: pattern                  RE2 against each To and Cc addr-spec
 //	subject_regex: pattern             RE2 against the decoded Subject
 //	header: {name: X-Foo, regex: ...}  RE2 against any value of the named header
@@ -29,18 +30,27 @@
 //
 // # Cycles
 //
-// `from_domains_file` names a file another program owns (the job-search
-// tracker), so its contents are re-read once per pipeline cycle rather than
-// once per process or once per message. The pipeline calls Engine.BeginCycle at
-// the top of every run/tick; the next evaluation that consults a domain file
-// re-reads it. A file that is missing or unreadable matches nothing and logs a
-// single warning per cycle — it never fails compilation or evaluation, because
-// the owning program may not have created it yet.
+// `from_domains_file` and `from_regex_file` name files another program owns
+// (the job-search tracker), so their contents are re-read once per pipeline
+// cycle rather than once per process or once per message. The pipeline calls
+// Engine.BeginCycle at the top of every run/tick; the next evaluation that
+// consults such a file re-reads it. A file that is missing or unreadable
+// matches nothing and logs a single warning per cycle — it never fails
+// compilation or evaluation, because the owning program may not have created it
+// yet.
 //
-// It is, however, reported: Engine.Degraded lists every domain file the cycle
-// could not read in full, and Engine.Preload reads them all up front so the
-// list is complete before the first message is evaluated. "Matched nothing" and
-// "could not be evaluated" look identical to a matcher and are opposite facts
-// to a caller deciding whether it is safe to advance a sync cursor past the
-// mail it just skipped — see the pipeline's on_degraded_filter policy.
+// It is, however, reported: Engine.Degraded lists every file the cycle could not
+// read in full, and Engine.Preload reads them all up front so the list is
+// complete before the first message is evaluated. "Matched nothing" and "could
+// not be evaluated" look identical to a matcher and are opposite facts to a
+// caller deciding whether it is safe to advance a sync cursor past the mail it
+// just skipped — see the pipeline's on_degraded_filter policy.
+//
+// Files is generic over "a list of things parsed from a file": one per-cycle
+// cache, one warning path and one degradation map serve every file-valued
+// predicate, so a new one costs a parser and a case in compileNode. Pattern
+// lists carry a hazard domain lists do not — an over-broad pattern matches
+// every message rather than none — and the guards for that live in
+// regexfile.go, which also explains why RE2 makes ReDoS the wrong thing to
+// worry about here.
 package filter

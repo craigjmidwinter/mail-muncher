@@ -905,3 +905,76 @@ rules:
 	require.Empty(t, ps.Errors(), "%v", ps)
 	require.Empty(t, ps.Warnings(), "an imap account should validate without a single warning: %v", ps)
 }
+
+// TestExpandFromRegexFilePath: a file-valued predicate missing from
+// filePathPredicates silently loses both `~`/`$VAR` expansion and the
+// missing-file warning, and nothing else would catch it.
+func TestExpandFromRegexFilePath(t *testing.T) {
+	t.Setenv("HOME", "/home/tester")
+	t.Setenv("MM_PATTERNS", "/srv/jobsearch")
+
+	cfg, err := Load(write(t, `
+state_dir: ~/state
+accounts:
+  - name: personal
+    provider: gmail
+    gmail: {credentials_file: /c, token_file: /t}
+rules:
+  - name: job-search
+    match:
+      any:
+        - from_regex_file: ~/companies.txt
+        - from_regex_file: $MM_PATTERNS/more.txt
+    dest: ~/Mail/job-search
+`))
+	require.NoError(t, err)
+
+	refs := collectFilePathRefs(&cfg.Rules[0].Match)
+	require.Len(t, refs, 2)
+	require.Equal(t, "any[0].from_regex_file", refs[0].Path)
+	require.Equal(t, "from_regex_file", refs[0].Key)
+	require.Equal(t, "/home/tester/companies.txt", refs[0].Value)
+	require.Equal(t, "/srv/jobsearch/more.txt", refs[1].Value)
+}
+
+// TestValidateFileContentValidatorHook pins the hook's contract: internal/filter
+// installs it, it is only consulted for a file that exists, and everything it
+// says is a warning — an externally-owned file must never make a config
+// unusable.
+func TestValidateFileContentValidatorHook(t *testing.T) {
+	require.Nil(t, FileContentValidator, "the hook must default to nil in this package")
+
+	dir := t.TempDir()
+	present := filepath.Join(dir, "patterns.txt")
+	require.NoError(t, os.WriteFile(present, []byte("wagepoint\n"), 0o600))
+	absent := filepath.Join(dir, "gone.txt")
+
+	var seen [][2]string
+	FileContentValidator = func(predicate, path string) []string {
+		seen = append(seen, [2]string{predicate, path})
+		return []string{"line 2: nope"}
+	}
+	t.Cleanup(func() { FileContentValidator = nil })
+
+	cfg := loadForValidation(t, `
+accounts:
+  - name: personal
+    provider: gmail
+    gmail: {credentials_file: /c, token_file: /t}
+rules:
+  - name: present
+    match: {from_regex_file: `+present+`}
+    dest: /one
+  - name: absent
+    match: {from_regex_file: `+absent+`}
+    dest: /two
+`)
+
+	ps := Validate(cfg)
+	require.NoError(t, ps.Err(), "a bad line in someone else's file is never an error")
+
+	require.Equal(t, [][2]string{{"from_regex_file", present}}, seen,
+		"a file that does not exist has no contents to check")
+	require.True(t, hasProblem(ps, SeverityWarning, "rules[0].match.from_regex_file"))
+	require.True(t, hasProblem(ps, SeverityWarning, "rules[1].match.from_regex_file"))
+}

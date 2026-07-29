@@ -183,8 +183,11 @@ func TestDomainFilesPreloadReadsUpFront(t *testing.T) {
 	present := writeDomains(t, "example.com\n")
 	missing := filepath.Join(t.TempDir(), "gone.txt")
 
-	files := NewDomainFiles()
-	files.Preload([]string{present, missing})
+	files := NewFiles()
+	files.Preload([]FileRef{
+		{Kind: FileKindDomains, Path: present},
+		{Kind: FileKindDomains, Path: missing},
+	})
 
 	degraded := files.Degraded()
 	require.Len(t, degraded, 1, "only the unreadable list is degraded")

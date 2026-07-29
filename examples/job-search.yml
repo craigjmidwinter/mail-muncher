@@ -102,6 +102,24 @@ rules:
         # `careers.acme.com` and `mail.acme.com`.
         - from_domains_file: ~/.local/share/jobsearch/domains.txt
 
+        # The same subscription interface, for the senders a domain list cannot
+        # express. A company mails from a host nobody can predict in advance —
+        # wagepoint.teamtailor.com today, mail.wagepoint.com next week — and a
+        # domain list can only enumerate hosts already seen. The tracker knows
+        # the company name and writes one RE2 pattern per line here instead.
+        #
+        # Same reload and failure rules as the domain file above. Patterns are
+        # compiled once per read, never per message, and are case-sensitive
+        # unless the pattern itself starts with `(?i)`.
+        #
+        # The difference worth knowing: a typo in the domain file matches
+        # nothing, but a typo here could match everything. So an empty pattern,
+        # or one that matches the empty string (`.*`, `^$`, `(?i)`), is refused
+        # and reported rather than allowed to claim the mailbox, one line that
+        # will not compile is skipped without discarding the rest of the file,
+        # and the number of patterns loaded is logged on every cycle.
+        - from_regex_file: ~/.local/share/jobsearch/companies.txt
+
         # Applicant tracking systems send from their own domains, not the
         # company's, so catch the big ones by name too.
         - from_domains:

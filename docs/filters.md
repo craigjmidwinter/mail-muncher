@@ -240,6 +240,98 @@ address matches.
 To test the raw header including the display name, use
 `header: {name: From, regex: ...}` instead.
 
+### `from_regex_file`
+
+```yaml
+- from_regex_file: ~/.local/share/jobsearch/companies.txt
+```
+
+Identical matching semantics to `from_regex` — each pattern is tested against
+each `From` addr-spec, and the predicate matches if **any** pattern matches
+**any** address. The difference, as with `from_domains_file`, is who owns the
+list: **the file belongs to another program**, and mail-muncher re-reads and
+recompiles it at the start of every cycle.
+
+It exists for the case a domain list cannot express. A company mails from a host
+nobody can predict in advance — `wagepoint.teamtailor.com` today,
+`mail.wagepoint.com` next week, `notifications@wagepoint-hr.example` after that.
+A domain list can only enumerate hosts already seen. The program that knows the
+company name can emit `wagepoint` and be done.
+
+**File format** — one RE2 pattern per line:
+
+```
+# tracked companies
+wagepoint
+(?i)^careers@acme\.io$
+teamtailor\.com$
+ticket#[0-9]+
+```
+
+- Surrounding whitespace is trimmed. Blank lines are skipped. Duplicates
+  collapse.
+- **Nothing is lowercased.** A regex is case-sensitive by construction, and
+  `(?i)` is how a caller asks for otherwise. Lowercasing the file would silently
+  change what a pattern matches.
+- A `#` starts a comment **only at the start of a line**. Anywhere else it is a
+  literal character in the pattern — unlike a domain list, there are no trailing
+  comments, because truncating a regex at a `#` would change what it matches
+  without saying so.
+- Patterns are unanchored, like every other regex here. `wagepoint` matches any
+  address containing it, which is usually the point.
+
+**Reload, missing files and degradation** are exactly `from_domains_file`'s:
+read once per cycle on first use, shared between rules naming the same file,
+missing means "matches nothing" plus one warning per cycle, and the failure is
+reported through `on_degraded_filter` so it can decide whether the cursor
+advances. Each pattern is compiled once per read, never per message.
+
+#### The over-broad hazard, and why this predicate is guarded
+
+A typo in a **domain** file matches nothing. The cost is silence: mail you
+wanted does not arrive, and you notice.
+
+A typo in a **pattern** file can match everything. `.*`, `^`, `x?` and an empty
+pattern all match every address there is, so one bad line can hand your entire
+mailbox to a rule and write the whole account to disk. Silence is recoverable; a
+full mailbox in someone's `dest` is not. The file is machine-generated, so the
+typo arrives without a human reading it first.
+
+That asymmetry is guarded, not just documented:
+
+| Line | What happens |
+| --- | --- |
+| Empty, or matches the empty string (`.*`, `^$`, `(?i)`, `wagepoint\|`) | **Refused.** Reported like an invalid pattern. Write one that requires at least one character if you really want breadth. |
+| Does not compile | **Refused, by itself.** The line number and the compile error are reported; every other pattern in the file stays in force. A generated file with one bad entry loses one subscription, not all of them. |
+| Anything else | Loaded, and the **count is logged for the file on every cycle**. |
+
+```
+level=WARN msg="pattern list entry rejected; the rest of the file is still in force" path=/Users/you/.local/share/jobsearch/companies.txt line=4 pattern=.* error="pattern matches the empty string, so it would match every message; require at least one character"
+level=INFO msg="pattern list loaded" path=/Users/you/.local/share/jobsearch/companies.txt patterns=11 rejected=1
+```
+
+That `patterns=` count is the point of the log line. A file that went from
+twelve patterns to one catch-all is a number you can see in the run output,
+rather than something you discover by way of a full disk.
+
+`validate` reports the same thing before a cycle ever runs, as a warning — the
+file belongs to another program, so a bad line in it must not stop mail-muncher
+from starting:
+
+```
+warning: rules[0].match.from_regex_file: /Users/you/.local/share/jobsearch/companies.txt: 1 of 12 patterns rejected (line 4: pattern matches the empty string, so it would match every message; require at least one character)
+```
+
+A single `.` is **not** refused: it matches every non-empty address but not the
+empty string, and widening the rule into a guess about which short patterns are
+"too broad" would start rejecting legitimate ones. The per-cycle count is the
+backstop there.
+
+One thing not to worry about: patterns are RE2, which has no backtracking.
+Matching is linear in the length of the address, so a pathological pattern
+arriving from a file mail-muncher does not own cannot hang a cycle. **The hazard
+on this path is breadth, not ReDoS.**
+
 ### `to_regex`
 
 ```yaml
@@ -422,7 +514,7 @@ available:
 
 | Message field | Read by |
 | --- | --- |
-| `From` (or `Sender` when `From` is absent) | `from_domains`, `from_domains_file`, `from_regex` |
+| `From` (or `Sender` when `From` is absent) | `from_domains`, `from_domains_file`, `from_regex`, `from_regex_file` |
 | `To`, `Cc` | `to_regex` |
 | `Subject`, RFC 2047-decoded | `subject_regex` |
 | All top-level headers, decoded, repeats preserved | `header` |

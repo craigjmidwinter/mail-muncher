@@ -39,6 +39,7 @@ match:
 | `from_domains` | list of domains | any `From` address's domain equals or is a subdomain of a listed domain |
 | `from_domains_file` | path | same, with the list read from an externally-owned file each cycle |
 | `from_regex` | RE2 pattern | the pattern matches any `From` addr-spec (no display name) |
+| `from_regex_file` | path | same, with the patterns read from an externally-owned file each cycle |
 | `to_regex` | RE2 pattern | the pattern matches any `To` or `Cc` addr-spec |
 | `subject_regex` | RE2 pattern | the pattern matches the decoded `Subject` |
 | `header` | `{name: X-Foo, regex: ...}` | the pattern matches any value of that header |
@@ -58,6 +59,11 @@ One worked example each:
 
 # A specific sender, however they capitalize it.
 - from_regex: "(?i)^no-?reply@acme\\.com$"
+
+# Patterns owned and updated by another program — re-read every cycle. Use this
+# when the sending host cannot be enumerated in advance (wagepoint.teamtailor.com,
+# mail.wagepoint.com, notifications@wagepoint-hr.example).
+- from_regex_file: ~/.local/share/jobsearch/companies.txt
 
 # Anything addressed to a plus-alias handed out to vendors.
 - to_regex: "(?i)^me\\+vendors@example\\.com$"
@@ -137,6 +143,55 @@ MAIL.Umbrella.COM  # case is irrelevant
 The same matching rules apply to the inline `from_domains:` predicate; the only
 difference is who owns the list.
 
+## Pattern-list file format
+
+`from_regex_file` is the same idea for a *pattern* rather than a *domain*: one
+RE2 pattern per line, in a file mail-muncher does not own. Matching semantics
+are `from_regex`'s — every pattern is tested against every `From` addr-spec, and
+the predicate matches if any pattern matches any address.
+
+```
+# ~/.local/share/jobsearch/companies.txt
+# written by the job-search tracker
+
+wagepoint
+(?i)^careers@acme\.io$
+teamtailor\.com$
+```
+
+- Same reload, caching and degradation rules as `from_domains_file`. Patterns
+  are compiled once per read, never per message.
+- **Nothing is lowercased.** A regex is case-sensitive by construction; `(?i)`
+  is how the file asks for otherwise.
+- **`#` is a comment only at the start of a line.** Elsewhere it is a literal
+  character in the pattern — truncating a regex at a `#` would silently change
+  what it matches.
+- **Patterns are unanchored**, so `wagepoint` matches any address containing it.
+  That is usually the point.
+
+### When generating this file, mind the breadth
+
+This is the one place where a mistake is worse than in a domain list. A typo in
+a domain list matches **nothing** — you lose mail you wanted. A typo here can
+match **everything** — one bad line can claim the entire mailbox and archive the
+whole account to disk.
+
+mail-muncher guards it, and a generating program should expect the guard:
+
+- An empty pattern, or one that matches the empty string (`.*`, `^`, `^$`,
+  `(?i)`, `wagepoint|`), is **refused** and reported. Write a pattern that
+  requires at least one character.
+- A pattern that does not compile is **refused by itself**, naming its line. The
+  rest of the file stays in force, so one bad entry costs one subscription.
+- The number of patterns loaded is logged per file per cycle
+  (`msg="pattern list loaded" patterns=11 rejected=1`), so a file that collapsed
+  to a single catch-all is visible before it fills a disk.
+- `mail-muncher validate` reports the same rejections as warnings, before a
+  cycle runs.
+
+There is no ReDoS risk to design around: RE2 has no backtracking and matches in
+linear time. The hazard is breadth, not runtime.
+
 ## Debugging a rule that will not fire
 
 ```bash
@@ -150,8 +205,9 @@ Check in this order:
 
 1. Is an earlier rule claiming the message? First match wins.
 2. Is the rule scoped to the wrong `account`?
-3. Is a `from_domains_file` missing? `mail-muncher validate` reports it as a
-   warning naming the exact path.
+3. Is a `from_domains_file` or `from_regex_file` missing? `mail-muncher
+   validate` reports it as a warning naming the exact path — and for a pattern
+   list, reports any line it had to reject.
 4. Is the regex anchored or case-sensitive when it should not be?
 5. Was the message even fetched? A narrow `gmail.query` can starve a full scan;
    on IMAP, a folder missing from `imap.mailboxes` is never read at all.

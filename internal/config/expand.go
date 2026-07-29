@@ -13,8 +13,12 @@ import (
 //
 // TODO(filter-engine): once internal/filter owns the match schema this set
 // should come from there instead of being duplicated here.
+// A predicate missing from this set silently loses both `~`/`$VAR` expansion
+// and the "file does not exist yet" warning, so every new file-valued predicate
+// must be added here as well as to internal/filter.
 var filePathPredicates = map[string]bool{
 	"from_domains_file": true,
+	"from_regex_file":   true,
 }
 
 // ExpandPath expands `$VAR` / `${VAR}` references and a leading `~` in a
@@ -61,7 +65,7 @@ func homeDir() string {
 // expandPathsInNode walks an opaque match tree and expands every scalar value
 // held under a path-valued predicate key.
 func expandPathsInNode(n *yaml.Node) {
-	walkFilePathPredicates(n, "", func(_ string, v *yaml.Node) {
+	walkFilePathPredicates(n, "", func(_, _ string, v *yaml.Node) {
 		v.Value = ExpandPath(v.Value)
 	})
 }
@@ -71,6 +75,9 @@ type filePathRef struct {
 	// Path is a dotted/bracketed location within the match node, e.g.
 	// "any[0].from_domains_file".
 	Path string
+	// Key is the predicate itself, e.g. "from_domains_file". It decides how the
+	// file's *contents* are checked; see FileContentValidator.
+	Key string
 	// Value is the expanded filesystem path.
 	Value string
 	// Line is the 1-based line in the config file, or 0 if unknown.
@@ -80,15 +87,16 @@ type filePathRef struct {
 // collectFilePathRefs returns every path-valued predicate in a match tree.
 func collectFilePathRefs(n *yaml.Node) []filePathRef {
 	var refs []filePathRef
-	walkFilePathPredicates(n, "", func(path string, v *yaml.Node) {
-		refs = append(refs, filePathRef{Path: path, Value: v.Value, Line: v.Line})
+	walkFilePathPredicates(n, "", func(path, key string, v *yaml.Node) {
+		refs = append(refs, filePathRef{Path: path, Key: key, Value: v.Value, Line: v.Line})
 	})
 	return refs
 }
 
 // walkFilePathPredicates invokes fn for each scalar value stored under a key
-// listed in filePathPredicates, passing a human-readable location.
-func walkFilePathPredicates(n *yaml.Node, prefix string, fn func(path string, value *yaml.Node)) {
+// listed in filePathPredicates, passing a human-readable location and the
+// predicate key itself.
+func walkFilePathPredicates(n *yaml.Node, prefix string, fn func(path, key string, value *yaml.Node)) {
 	if n == nil {
 		return
 	}
@@ -106,7 +114,7 @@ func walkFilePathPredicates(n *yaml.Node, prefix string, fn func(path string, va
 				child = prefix + "." + k.Value
 			}
 			if k.Kind == yaml.ScalarNode && filePathPredicates[k.Value] && v.Kind == yaml.ScalarNode {
-				fn(child, v)
+				fn(child, k.Value, v)
 				continue
 			}
 			walkFilePathPredicates(v, child, fn)

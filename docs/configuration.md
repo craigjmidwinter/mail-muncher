@@ -692,7 +692,8 @@ Every path-valued field is expanded when the config loads:
 - `state_dir`
 - `accounts[].gmail.credentials_file`, `accounts[].gmail.token_file`
 - `rules[].dest`
-- every `from_domains_file` value anywhere inside a match tree
+- every `from_domains_file` and `from_regex_file` value anywhere inside a match
+  tree
 
 Expansion runs in two steps, in this order:
 
@@ -741,14 +742,16 @@ alone exit 0 — which is deliberate, and worth internalizing:
 | Missing/duplicate name, missing or unknown `provider`, unknown account, empty `dest`, missing `match`, bad format, uncompilable match tree, bad `initial_lookback` | error | The config cannot be used as written. |
 | `credentials_file` missing on disk | warning | Written before the OAuth client is downloaded. |
 | `token_file` missing on disk | warning | Created by `auth`, which runs after the config exists. |
-| `from_domains_file` missing on disk | warning | **Owned by another program**, which may not have created it yet. The predicate matches nothing until it appears. |
+| `from_domains_file` or `from_regex_file` missing on disk | warning | **Owned by another program**, which may not have created it yet. The predicate matches nothing until it appears. |
+| A `from_regex_file` pattern that does not compile, or that would match every message | warning | Same reason. The bad line is skipped and named; the rest of the file stays in force. See [filters.md](filters.md#the-over-broad-hazard-and-why-this-predicate-is-guarded). |
 | No rules configured | warning | Valid, just useless. |
 | Duplicate format in one rule | warning | Harmless; collapsed at write time. |
 | `include_spam_trash: true` | warning | Legal and sometimes what you want, but it feeds attacker-authored mail to an AI agent. Never turn it on by accident. |
 
-That last-but-two row is the important one. The whole point of
-`from_domains_file` is that mail-muncher does not own it, so its absence can
-never be a hard failure — not at validation time, and not at run time either.
+Those two file rows are the important ones. The whole point of
+`from_domains_file` and `from_regex_file` is that mail-muncher does not own the
+file, so neither its absence nor a bad line inside it can ever be a hard failure
+— not at validation time, and not at run time either.
 
 The same validation runs at the start of `run` and `daemon`, so a config error
 stops a cycle before it touches the network.
@@ -769,6 +772,8 @@ Some things are deliberately not configurable:
 | File modes | mail 0644/0755, state and tokens 0600/0700 | Fixed. |
 | Log destination | stderr, `log/slog` text handler | `--log-level` sets verbosity only. |
 
-The domain list read by `from_domains_file` is not configuration either — it is
-input, owned by another program, re-read every cycle. See
-[filters.md](filters.md#from_domains_file).
+The domain list read by `from_domains_file`, and the pattern list read by
+`from_regex_file`, are not configuration either — they are input, owned by
+another program, re-read every cycle. See
+[filters.md](filters.md#from_domains_file) and
+[filters.md](filters.md#from_regex_file).
