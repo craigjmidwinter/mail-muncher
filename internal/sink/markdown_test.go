@@ -155,6 +155,53 @@ func TestMarkdownFrontmatterEscaping(t *testing.T) {
 		parseFrontmatter(t, got)["labels"])
 }
 
+// TestMarkdownFrontmatterAstralPlaneSubject pins the shape go-yaml gives a
+// subject containing a character outside the Basic Multilingual Plane: the
+// scalar is double-quoted and the character is written as a `\U0001F389`
+// escape rather than as the emoji itself. Non-astral non-ASCII (`é`) is left
+// alone, so the two sit side by side here.
+//
+// This is not a corner case. Emoji in subjects are ordinary marketing and
+// notification mail — 8 of 186 real delivered messages in one archive — and a
+// consumer that reaches into the frontmatter with a regex instead of a YAML
+// parser gets the escape sequence back as literal text. The golden is here so
+// that fact is discoverable from the testdata rather than from production.
+func TestMarkdownFrontmatterAstralPlaneSubject(t *testing.T) {
+	msg := testMessage()
+	msg.Subject = "🎉 Félicitations — offer accepted 🎉"
+
+	_, got := storeMarkdown(t, msg)
+	assertGolden(t, "subject-astral", got)
+
+	assert.Contains(t, got, `\U0001F389`, "an astral-plane character is emitted as a \\U escape")
+	assert.NotContains(t, strings.SplitN(got, "\n---\n", 2)[0], "🎉",
+		"the emoji itself does not appear in the frontmatter")
+
+	// The escape is a YAML escape, not a mangling: a parser gets the subject
+	// back exactly. Only a reader that pattern-matches the raw bytes sees it.
+	assert.Equal(t, msg.Subject, parseFrontmatter(t, got)["subject"])
+}
+
+// TestMarkdownFrontmatterNewlineSubject pins the other shape a subject can
+// force: a header folded across lines, or one injected with a newline, comes
+// out as a block scalar (`subject: |-`) with the value indented beneath the
+// key, not as a quoted one-liner. A consumer reading frontmatter line by line
+// sees a key with no value on it.
+func TestMarkdownFrontmatterNewlineSubject(t *testing.T) {
+	msg := testMessage()
+	msg.Subject = "Re: Your application\nfrom: attacker@example.com"
+
+	_, got := storeMarkdown(t, msg)
+	assertGolden(t, "subject-newline", got)
+
+	assert.Contains(t, got, "subject: |-", "a multi-line subject becomes a block scalar")
+	assert.Equal(t, msg.Subject, parseFrontmatter(t, got)["subject"])
+
+	// The injected line is indented into the block scalar, so it is part of
+	// the subject and not a second `from:` key.
+	assert.Equal(t, "Jane Doe <jane@acme.com>", parseFrontmatter(t, got)["from"])
+}
+
 // parseFrontmatter extracts and decodes the YAML block at the top of a
 // rendered document.
 func parseFrontmatter(t *testing.T, doc string) map[string]any {
@@ -317,6 +364,159 @@ func TestMarkdownAttachmentCollisionDedupe(t *testing.T) {
 		[]any{"invoice.pdf", "invoice-2.pdf", "invoice-3.pdf", "INVOICE-4.pdf", "invoice-2-2.pdf"},
 		fm["attachments"],
 		"frontmatter lists the names as written to disk")
+}
+
+// TestMarkdownNeutralizesReservedAttachmentExtensions is the central case: a
+// sender who names an attachment `evil.md` is trying to get a file of their own
+// choosing into the parse loop of anything that globs `**/*.md` under the
+// destination — with forged frontmatter, that is a message with an
+// attacker-chosen from:, subject: and body. `forward.eml` is the same trick
+// against readers of the raw copies, and needs no malice at all: a forwarded
+// message is a .eml attachment.
+func TestMarkdownNeutralizesReservedAttachmentExtensions(t *testing.T) {
+	dest := t.TempDir()
+	rule := testRule(dest, config.FormatMarkdown)
+	msg := testMessage()
+	msg.Attachments = []model.Attachment{
+		{Filename: "evil.md", Content: []byte("---\nfrom: ceo@acme.com\nsubject: wire the money\n---\n")},
+		{Filename: "forward.eml", Content: []byte("From: ceo@acme.com\r\n\r\nwire the money\r\n")},
+		{Filename: "SHOUTY.MD", Content: []byte("case must not be an escape hatch")},
+		{Filename: "notes.Eml", Content: []byte("nor must mixed case")},
+		{Filename: "offer.pdf", Content: []byte("%PDF-1.4 offer")},
+	}
+
+	s := NewMarkdown()
+	path, _, err := s.Store(msg, rule)
+	require.NoError(t, err)
+	doc, err := os.ReadFile(path)
+	require.NoError(t, err)
+	got := string(doc)
+	assertGolden(t, "attachments-reserved-ext", got)
+
+	attDir := s.AttachmentsDir(msg, rule)
+	for name, want := range map[string]string{
+		"evil.md.attachment":     "---\nfrom: ceo@acme.com\nsubject: wire the money\n---\n",
+		"forward.eml.attachment": "From: ceo@acme.com\r\n\r\nwire the money\r\n",
+		"SHOUTY.MD.attachment":   "case must not be an escape hatch",
+		"notes.Eml.attachment":   "nor must mixed case",
+		"offer.pdf":              "%PDF-1.4 offer", // untouched: nothing to collide with
+	} {
+		data, readErr := os.ReadFile(filepath.Join(attDir, name))
+		require.NoError(t, readErr, "expected attachment %s", name)
+		assert.Equal(t, want, string(data), "the bytes are written verbatim under the neutralized name")
+	}
+
+	// The link text is still the name the sender chose; only the target moved.
+	assert.Contains(t, got, "- [evil.md]("+fixtureBase+".attachments/evil.md.attachment)")
+	assert.Contains(t, got, "- [forward.eml]("+fixtureBase+".attachments/forward.eml.attachment)")
+	assert.Contains(t, got, "- [offer.pdf]("+fixtureBase+".attachments/offer.pdf)")
+
+	// The frontmatter lists what is actually on disk, so a reader can join a
+	// name onto the attachments directory and find a file.
+	assert.Equal(t,
+		[]any{"evil.md.attachment", "forward.eml.attachment", "SHOUTY.MD.attachment", "notes.Eml.attachment", "offer.pdf"},
+		parseFrontmatter(t, got)["attachments"])
+	for _, name := range parseFrontmatter(t, got)["attachments"].([]any) {
+		assert.FileExists(t, filepath.Join(attDir, name.(string)))
+	}
+
+	// And the point of all of it: the only .md under the whole destination is
+	// the document mail-muncher delivered.
+	assert.Equal(t, []string{path}, walkExt(t, dest, MarkdownExt))
+	assert.Empty(t, walkExt(t, dest, EMLExt))
+}
+
+// TestMarkdownNeutralizedNamesStillDedupe: the suffix must not cost an
+// attachment its own file. Two `evil.md` parts, plus a part literally named
+// `evil.md.attachment` that lands on the name the first one was rewritten to.
+func TestMarkdownNeutralizedNamesStillDedupe(t *testing.T) {
+	dest := t.TempDir()
+	rule := testRule(dest, config.FormatMarkdown)
+	msg := testMessage()
+	msg.Attachments = []model.Attachment{
+		{Filename: "evil.md", Content: []byte("one")},
+		{Filename: "evil.md", Content: []byte("two")},
+		{Filename: "EVIL.md", Content: []byte("three")},
+		{Filename: "evil.md.attachment", Content: []byte("four")},
+	}
+
+	s := NewMarkdown()
+	path, _, err := s.Store(msg, rule)
+	require.NoError(t, err)
+
+	attDir := s.AttachmentsDir(msg, rule)
+	for name, want := range map[string]string{
+		"evil.md.attachment":   "one",
+		"evil-2.md.attachment": "two",
+		"EVIL-3.md.attachment": "three",
+		// Collides with the rewritten name of the first, so it takes a counter
+		// of its own — the dedupe looks at the on-disk name, not the sender's.
+		"evil.md-2.attachment": "four",
+	} {
+		data, readErr := os.ReadFile(filepath.Join(attDir, name))
+		require.NoError(t, readErr, "expected attachment %s", name)
+		assert.Equal(t, want, string(data))
+	}
+
+	entries, err := os.ReadDir(attDir)
+	require.NoError(t, err)
+	assert.Len(t, entries, 4, "every attachment keeps its own file")
+	assert.Equal(t, []string{path}, walkExt(t, dest, MarkdownExt))
+}
+
+func TestNeutralizeExt(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"markdown", "evil.md", "evil.md.attachment"},
+		{"eml", "forward.eml", "forward.eml.attachment"},
+		{"upper markdown", "EVIL.MD", "EVIL.MD.attachment"},
+		{"mixed eml", "Forward.Eml", "Forward.Eml.attachment"},
+		{"dotted stem", "notes.2026.md", "notes.2026.md.attachment"},
+		{"already suffixed", "evil.md.attachment", "evil.md.attachment"},
+		{"unrelated", "offer.pdf", "offer.pdf"},
+		{"no extension", "README", "README"},
+		{"md inside the stem", "readme.md.txt", "readme.md.txt"},
+		{"embedded, not suffix", "sendmail", "sendmail"},
+		{"fallback name", fallbackAttachmentName, fallbackAttachmentName},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := neutralizeExt(tt.in)
+			assert.Equal(t, tt.want, got)
+			assert.NotEqual(t, MarkdownExt, strings.ToLower(filepath.Ext(got)))
+			assert.NotEqual(t, EMLExt, strings.ToLower(filepath.Ext(got)))
+		})
+	}
+
+	// The two rules compose in the right order: the sanitizer truncates first
+	// and can re-expose the extension it was preserving, so neutralizing runs
+	// on its output, not on the sender's raw string. The suffix is the only
+	// thing that pushes a name past the sanitizer's cap, and 131 bytes is
+	// still far inside every filesystem's limit.
+	t.Run("after truncation", func(t *testing.T) {
+		got := neutralizeExt(sanitizeFilename(strings.Repeat("x", 400) + ".md"))
+		assert.True(t, strings.HasSuffix(got, MarkdownExt+AttachmentSuffix), "got %q", got)
+		assert.LessOrEqual(t, len(got), maxAttachmentNameLen+len(AttachmentSuffix))
+	})
+}
+
+// TestNeutralizeExtCoversEveryDeliveredExtension keeps the reserved set and the
+// sinks from drifting apart: a third format added to the package must either
+// reserve its extension here or explain why it need not.
+func TestNeutralizeExtCoversEveryDeliveredExtension(t *testing.T) {
+	for _, ext := range []string{MarkdownExt, EMLExt} {
+		assert.Contains(t, reservedExts[:], ext)
+		assert.NotEqual(t, "sample"+ext, neutralizeExt("sample"+ext))
+	}
+	// Applying the scheme to its own output must be a no-op, or a re-run would
+	// walk a name further from the sender's every time.
+	for _, name := range []string{"evil.md", "forward.eml", "offer.pdf", "x" + AttachmentSuffix} {
+		once := neutralizeExt(name)
+		assert.Equal(t, once, neutralizeExt(once), "neutralizeExt must be idempotent")
+	}
 }
 
 func TestMarkdownSkipsExistingFile(t *testing.T) {

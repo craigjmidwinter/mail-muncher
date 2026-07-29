@@ -13,6 +13,42 @@
 // The basename is shared by all formats (see Basename), so the .eml and the
 // .md of one message sit side by side and sort together.
 //
+// # Reserved extensions
+//
+// Within a rule's destination, `.eml` and `.md` are reserved: a file carrying
+// either extension is a rendering this package delivered, and nothing else
+// ever is. That is a guarantee about the filesystem, not about any particular
+// reader — the obvious way to consume the archive is to glob `**/*.md` (or
+// `**/*.eml`) under the destination, and that glob must not be able to return
+// anything a sender supplied.
+//
+// Attachments are the only sender-named files written here, so they are where
+// the guarantee is enforced. An attachment whose sanitized filename would end
+// in a reserved extension — compared case-insensitively, because a
+// case-insensitive filesystem would hand `EVIL.MD` back to that same glob — is
+// written with `.attachment` appended:
+//
+//	evil.md      is written as  evil.md.attachment
+//	forward.eml  is written as  forward.eml.attachment
+//	offer.pdf    is written as  offer.pdf          (unchanged)
+//
+// Only the on-disk name changes. Under `## Attachments` the link text stays
+// the name the sender chose and the link target is the real path, so for
+// exactly these files the two differ, and the line reads
+// `- [evil.md](<basename>.attachments/evil.md.attachment)`.
+//
+// The frontmatter's `attachments:` list carries the on-disk names, so joining
+// one onto `<basename>.attachments` always yields a file that exists. The
+// attachment's bytes are untouched, and the .eml holds the part verbatim
+// regardless, so nothing is lost — an `evil.md` attachment is still recoverable
+// under its original name from the fidelity copy.
+//
+// Absent this, a `.md` attachment carrying forged YAML frontmatter would land
+// in a consumer's parse loop as a message with an attacker-chosen `from:`,
+// `subject:` and body, indistinguishable from delivered mail; a `.eml`
+// attachment — which is simply what a forwarded message looks like — would do
+// the same to any reader of the raw copies.
+//
 // # Idempotency
 //
 // The basename embeds a digest of the account and provider message id, which

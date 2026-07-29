@@ -21,6 +21,11 @@ const (
 	// AttachmentsDirSuffix is appended to the basename to name the sibling
 	// directory attachments are written into.
 	AttachmentsDirSuffix = ".attachments"
+	// AttachmentSuffix is appended to an attachment whose sanitized filename
+	// would otherwise end in a delivered-rendering extension, so that no
+	// sender-named file under a destination can be mistaken for a message
+	// mail-muncher wrote. See neutralizeExt.
+	AttachmentSuffix = ".attachment"
 
 	// noBodyPlaceholder stands in for a message with neither a text nor an
 	// HTML part, so the file is never a bare frontmatter block.
@@ -103,13 +108,13 @@ func (s *MarkdownSink) Store(msg *model.Message, rule *config.Rule) (string, boo
 		return path, true, nil
 	}
 
-	names := attachmentNames(attachmentsOf(msg))
-	doc, err := s.render(msg, rule, names)
+	files := attachmentFiles(attachmentsOf(msg))
+	doc, err := s.render(msg, rule, files)
 	if err != nil {
 		return path, false, err
 	}
 
-	cleanup, err := s.writeAttachments(msg, rule, names)
+	cleanup, err := s.writeAttachments(msg, rule, files)
 	if err != nil {
 		return path, false, err
 	}
@@ -136,7 +141,7 @@ func (s *MarkdownSink) Store(msg *model.Message, rule *config.Rule) (string, boo
 // The directory is created without following a link at its own name, so a
 // planted `<basename>.attachments -> /elsewhere` is refused rather than used to
 // scatter decoded attachments outside the destination tree.
-func (s *MarkdownSink) writeAttachments(msg *model.Message, rule *config.Rule, names []string) (func(), error) {
+func (s *MarkdownSink) writeAttachments(msg *model.Message, rule *config.Rule, files []attachmentFile) (func(), error) {
 	noop := func() {}
 	atts := attachmentsOf(msg)
 	if len(atts) == 0 {
@@ -157,7 +162,7 @@ func (s *MarkdownSink) writeAttachments(msg *model.Message, rule *config.Rule, n
 	}
 
 	for i, a := range atts {
-		if err := writeFileAtomic(filepath.Join(dir, names[i]), a.Content); err != nil {
+		if err := writeFileAtomic(filepath.Join(dir, files[i].name), a.Content); err != nil {
 			cleanup()
 			return noop, err
 		}
@@ -166,8 +171,13 @@ func (s *MarkdownSink) writeAttachments(msg *model.Message, rule *config.Rule, n
 }
 
 // render builds the whole document: frontmatter, body, attachment links.
-func (s *MarkdownSink) render(msg *model.Message, rule *config.Rule, names []string) ([]byte, error) {
-	front, err := yaml.Marshal(newFrontmatter(msg, rule, names))
+//
+// A link's text is the sanitized name the sender chose; its target is the name
+// on disk, which for a colliding extension carries the AttachmentSuffix the
+// text does not. The two differ on purpose: the document stays readable while
+// the file it points at cannot be mistaken for a delivered message.
+func (s *MarkdownSink) render(msg *model.Message, rule *config.Rule, files []attachmentFile) ([]byte, error) {
+	front, err := yaml.Marshal(newFrontmatter(msg, rule, files))
 	if err != nil {
 		return nil, fmt.Errorf("sink: encode frontmatter: %w", err)
 	}
@@ -183,13 +193,13 @@ func (s *MarkdownSink) render(msg *model.Message, rule *config.Rule, names []str
 	b.WriteString("---\n\n")
 	b.WriteString(body)
 	b.WriteString("\n")
-	if len(names) > 0 {
+	if len(files) > 0 {
 		b.WriteString("\n")
 		b.WriteString(attachmentsHeading)
 		b.WriteString("\n\n")
 		linkDir := Basename(msg) + AttachmentsDirSuffix
-		for _, n := range names {
-			fmt.Fprintf(&b, "- [%s](%s/%s)\n", n, linkDir, n)
+		for _, f := range files {
+			fmt.Fprintf(&b, "- [%s](%s/%s)\n", f.display, linkDir, f.name)
 		}
 	}
 	return []byte(b.String()), nil
@@ -256,15 +266,21 @@ type frontmatter struct {
 	ThreadIDSource string `yaml:"thread_id_source"`
 	// InReplyTo is the parent message's id, omitted for a message that starts a
 	// thread.
-	InReplyTo   string      `yaml:"in_reply_to,omitempty"`
-	Account     string      `yaml:"account"`
-	Rule        string      `yaml:"rule"`
-	Labels      flowStrings `yaml:"labels,omitempty"`
+	InReplyTo string      `yaml:"in_reply_to,omitempty"`
+	Account   string      `yaml:"account"`
+	Rule      string      `yaml:"rule"`
+	Labels    flowStrings `yaml:"labels,omitempty"`
+	// Attachments are the names *on disk* inside the sibling
+	// `<basename>.attachments` directory, not the names the sender chose: a
+	// reader can join each one onto that directory and get a real path. Where
+	// the two differ — an attachment whose name would have collided with a
+	// delivered rendering's extension — the sender's name is still visible as
+	// the link text under `## Attachments`, and the .eml has it verbatim.
 	Attachments flowStrings `yaml:"attachments,omitempty"`
 }
 
-func newFrontmatter(msg *model.Message, rule *config.Rule, names []string) frontmatter {
-	fm := frontmatter{Attachments: names}
+func newFrontmatter(msg *model.Message, rule *config.Rule, files []attachmentFile) frontmatter {
+	fm := frontmatter{Attachments: diskNames(files)}
 	if rule != nil {
 		fm.Rule = rule.Name
 	}
@@ -344,33 +360,96 @@ func (f flowStrings) MarshalYAML() (any, error) {
 	return node, nil
 }
 
-// attachmentNames maps attachments to the filenames they are written under:
-// sanitized, and de-duplicated with a `-2`, `-3` suffix before the extension.
-// Collisions are detected case-insensitively so the result is stable on
-// case-insensitive filesystems too.
-func attachmentNames(atts []model.Attachment) []string {
+// attachmentFile is one attachment's two names: what the sender called it,
+// and what it is called on disk. They are the same string for all but the
+// handful of attachments whose extension collides with a delivered rendering.
+type attachmentFile struct {
+	// display is the sanitized sender-supplied filename, used as the link
+	// text so the document reads the way the mail did.
+	display string
+	// name is the single path element the bytes are written under inside the
+	// attachments directory, and the name the frontmatter lists.
+	name string
+}
+
+// reservedExts are the extensions that mark a file as a rendering
+// mail-muncher itself delivered. No other file under a destination may end in
+// one — see neutralizeExt and the package documentation.
+var reservedExts = [...]string{MarkdownExt, EMLExt}
+
+// neutralizeExt appends AttachmentSuffix to a sanitized attachment filename
+// that would otherwise end in a reserved extension, so `evil.md` is written as
+// `evil.md.attachment` and `forward.eml` as `forward.eml.attachment`.
+//
+// This is the whole of the fix for a real confusion: a consumer that globs
+// `**/*.md` under a destination — the obvious way to read the archive — would
+// otherwise ingest a sender-supplied attachment as if it were a delivered
+// message, frontmatter and all, with an arbitrary `from:` and `subject:`. The
+// same goes for `.eml`, and forwarded mail arrives as a `.eml` attachment
+// routinely. Matching is case-insensitive because a case-insensitive
+// filesystem would hand `EVIL.MD` back to that same glob.
+//
+// Nothing is lost: the attachment's bytes are unchanged, its original name is
+// still the link text in the document, and the .eml alongside it holds the
+// part verbatim either way.
+func neutralizeExt(name string) string {
+	lower := strings.ToLower(name)
+	for _, ext := range reservedExts {
+		if strings.HasSuffix(lower, ext) {
+			return name + AttachmentSuffix
+		}
+	}
+	return name
+}
+
+// attachmentFiles maps attachments to the names they are written under:
+// sanitized, extension-neutralized, and de-duplicated with a `-2`, `-3`
+// suffix before the extension. Collisions are detected case-insensitively so
+// the result is stable on case-insensitive filesystems too.
+//
+// Dedupe counts the on-disk name, not the displayed one, so that an
+// `invoice.md` (written `invoice.md.attachment`) and a literal
+// `invoice.md.attachment` in the same message still get a file each. The
+// counter is inserted into the displayed name and the suffix re-derived, which
+// leaves the sequence identical to the old one for every attachment whose
+// extension does not collide.
+func attachmentFiles(atts []model.Attachment) []attachmentFile {
 	if len(atts) == 0 {
 		return nil
 	}
-	names := make([]string, 0, len(atts))
+	files := make([]attachmentFile, 0, len(atts))
 	used := make(map[string]bool, len(atts))
 	for _, a := range atts {
-		base := sanitizeFilename(a.Filename)
-		name := base
+		display := sanitizeFilename(a.Filename)
+		name := neutralizeExt(display)
 		if used[strings.ToLower(name)] {
-			ext := filepath.Ext(base)
-			stem := strings.TrimSuffix(base, ext)
+			ext := filepath.Ext(display)
+			stem := strings.TrimSuffix(display, ext)
 			for n := 2; ; n++ {
-				name = fmt.Sprintf("%s-%d%s", stem, n, ext)
+				display = fmt.Sprintf("%s-%d%s", stem, n, ext)
+				name = neutralizeExt(display)
 				if !used[strings.ToLower(name)] {
 					break
 				}
 			}
 		}
 		used[strings.ToLower(name)] = true
-		names = append(names, name)
+		files = append(files, attachmentFile{display: display, name: name})
 	}
-	return names
+	return files
+}
+
+// diskNames is the on-disk name of each attachment, which is what the
+// frontmatter lists and what a reader joins onto the attachments directory.
+func diskNames(files []attachmentFile) flowStrings {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make(flowStrings, 0, len(files))
+	for _, f := range files {
+		out = append(out, f.name)
+	}
+	return out
 }
 
 // sanitizeFilename reduces an attachment filename to something safe to join
