@@ -392,6 +392,54 @@ The example configs referenced below live in [`examples/`](examples/) —
 release archive, so a binary download has them too. You do not need them to get
 started, though: `mail-muncher init` writes a config from scratch.
 
+### Container image
+
+```bash
+docker pull ghcr.io/craigjmidwinter/mail-muncher:latest
+```
+
+`linux/amd64` and `linux/arm64`, built from the same binaries the release
+archives carry. The image's default command is `mcp`, because serving the
+archive over stdio is the mode a container suits: a client starts it, talks to
+it, and stops it. `run` and `daemon` work too — override the command — but on a
+host those are a cron line and a launchd/systemd unit, which fit better.
+
+Two mounts, and both matter:
+
+```bash
+docker run -i --rm \
+  -e IMAP_PASSWORD \
+  -v ~/.config/mail-muncher:/home/muncher/.config/mail-muncher:ro \
+  -v ~/.local/share/mail-muncher:/home/muncher/archive \
+  ghcr.io/craigjmidwinter/mail-muncher:latest mcp
+```
+
+**Every path inside `config.yml` has to be a path the container can see.** A
+`dest:` of `~/Mail/receipts` resolves against the container's home directory,
+not yours, so mail lands on a layer that disappears when the container exits.
+Point `dest:` at the mounted directory — `/home/muncher/archive/receipts` for
+the mount above — or you will archive into the void and the manifest will
+cheerfully tell you it worked.
+
+**`password_cmd` runs inside the container**, under `/bin/sh`, which means your
+host password manager is not there. `pass show mail/fastmail` cannot work. Use
+the secret material the container does have:
+
+```yaml
+password_cmd: printenv IMAP_PASSWORD          # -e IMAP_PASSWORD
+password_cmd: cat /run/secrets/imap-password  # docker secret or a mounted file
+```
+
+This is the one place the container path is genuinely worse than a host
+install: it moves the credential out of your password manager and into the
+container's environment. If that trade is not worth it to you, install the
+binary — `password_cmd` is designed for the host case, and this is the
+compromise, not the intent.
+
+The image is also what backs the [MCP Registry](https://registry.modelcontextprotocol.io)
+listing; [`server.json`](server.json) is that entry, and its `name` has to match
+the `io.modelcontextprotocol.server.name` label baked into the image.
+
 ### As a Claude Code skill
 
 The repo ships a skill and plugin package under [`skills/`](skills/), which
@@ -400,11 +448,9 @@ writing the config, running `auth`, and wiring the MCP server into your client.
 If that is how you want to adopt it, start there instead of the quickstart
 below.
 
-**The bundled skill still only knows the Gmail path** and has not yet caught up
-with `provider: imap` or `mail-muncher init`. It will walk you through Google
-Cloud rather than offering the two-minute route. Until it is updated, follow the
-[quickstart](#quickstart) here if you want IMAP; the binary itself supports it
-fully.
+The skill leads with `provider: imap` and drives `mail-muncher init`, so it
+takes the same two-minute route this README does rather than sending you to the
+Google Cloud Console.
 
 ## Quickstart
 

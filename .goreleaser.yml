@@ -46,6 +46,49 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+# A container image on GHCR, built from the binaries above rather than from
+# source. Two reasons it exists: it is the install path that needs nothing on
+# the host but a container runtime, and the official MCP Registry indexes
+# servers by distributable package, of which an OCI image is one. The registry
+# does not accept a bare GitHub release of Go binaries, so without this there
+# is no listing.
+#
+# `dockers_v2` is goreleaser's buildx-based image builder: one multi-arch
+# manifest assembled from the already-compiled per-arch binaries. It is marked
+# experimental upstream; the classic `dockers` + `docker_manifests` pair is the
+# fallback if it ever regresses.
+dockers_v2:
+  - id: mail-muncher
+    ids:
+      - mail-muncher
+    images:
+      - ghcr.io/craigjmidwinter/mail-muncher
+    dockerfile: Dockerfile
+    # Matches the linux half of the build matrix above. darwin has no container
+    # equivalent, and Docker Desktop on a Mac runs the linux image anyway.
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "{{ .Version }}"
+      # Only a full release moves `latest`. A prerelease that grabbed it would
+      # silently upgrade everyone who pulls the unqualified tag.
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    labels:
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.source: "https://github.com/craigjmidwinter/mail-muncher"
+      org.opencontainers.image.licenses: MIT
+    # Set on the manifest, not just the per-arch image configs. The MCP
+    # Registry's ownership check reads the manifest, so the server name has to
+    # survive here; it is also declared as a LABEL in the Dockerfile, and the
+    # two must agree with `name` in server.json.
+    annotations:
+      io.modelcontextprotocol.server.name: "io.github.craigjmidwinter/mail-muncher"
+      org.opencontainers.image.source: "https://github.com/craigjmidwinter/mail-muncher"
+      org.opencontainers.image.description: "An email client for AI agents: filtered, read-only mail on disk, served over MCP."
+
 # Keyless signing with cosign + GitHub OIDC. No long-lived key to manage: the
 # signature is bound to this workflow's identity and logged in Rekor.
 signs:
