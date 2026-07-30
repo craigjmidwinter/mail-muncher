@@ -24,6 +24,8 @@ jobs:
       # Mint the short-lived OIDC token cosign exchanges for a signing
       # certificate. Without this, keyless signing cannot work.
       id-token: write
+      # Push the container image to ghcr.io/craigjmidwinter/mail-muncher.
+      packages: write
     steps:
       - name: Check out
         uses: actions/checkout@v4
@@ -41,6 +43,29 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
+
+      # The image is Alpine and runs `apk add` and `adduser` at build time, so
+      # the linux/arm64 layer is genuinely executed rather than just assembled.
+      # On an amd64 runner that needs binfmt emulation; without QEMU the arm64
+      # half of the manifest fails to build.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # dockers_v2 builds through buildx, which needs a builder instance that
+      # can target more than the host platform.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Skipped on a dry run: --skip=publish means nothing is pushed, so there
+      # is nothing to authenticate for, and a login there would only be a way
+      # for the validation run to fail on credentials it never uses.
+      - name: Log in to GHCR
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # A missing tap token must be loud, not silent. The release still ships
       # binaries without it; only the Homebrew formula update is skipped.
