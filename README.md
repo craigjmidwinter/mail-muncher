@@ -400,11 +400,9 @@ writing the config, running `auth`, and wiring the MCP server into your client.
 If that is how you want to adopt it, start there instead of the quickstart
 below.
 
-**The bundled skill still only knows the Gmail path** and has not yet caught up
-with `provider: imap` or `mail-muncher init`. It will walk you through Google
-Cloud rather than offering the two-minute route. Until it is updated, follow the
-[quickstart](#quickstart) here if you want IMAP; the binary itself supports it
-fully.
+The skill leads with `provider: imap` and drives `mail-muncher init`, so it
+takes the same two-minute route this README does rather than sending you to the
+Google Cloud Console.
 
 ## Quickstart
 
