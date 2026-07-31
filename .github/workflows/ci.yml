@@ -100,3 +100,16 @@ jobs:
 
       - name: Show what a release would contain
         run: ls -l dist/*.tar.gz dist/checksums.txt
+
+      # server.json is only exercised during a tag release, which is a bad
+      # place to discover it is malformed: the image is already pushed and the
+      # GitHub release already cut by then. Validating on every PR moves that
+      # failure to where it is cheap to fix.
+      #
+      # This checks shape, not version numbers -- the release workflow rewrites
+      # `version` and the image tag from the tag before publishing, so the
+      # values committed here are last release's and are expected to lag.
+      - name: Validate server.json
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher validate

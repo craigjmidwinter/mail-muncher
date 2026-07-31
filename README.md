@@ -440,6 +440,15 @@ The image is also what backs the [MCP Registry](https://registry.modelcontextpro
 listing; [`server.json`](server.json) is that entry, and its `name` has to match
 the `io.modelcontextprotocol.server.name` label baked into the image.
 
+Publishing that entry is automatic. Tagging a release builds and pushes the
+image, and then a second job rewrites `version` and the image tag in
+`server.json` from the git tag and publishes to the registry, authenticating
+with the workflow's own OIDC identity rather than a stored token.
+
+**So the `version` committed in `server.json` is last release's, and lags by
+one tag on purpose.** The tag is the source of truth; the file is a template
+that CI stamps. Bumping it by hand achieves nothing.
+
 ### As a Claude Code skill
 
 The repo ships a skill and plugin package under [`skills/`](skills/), which
