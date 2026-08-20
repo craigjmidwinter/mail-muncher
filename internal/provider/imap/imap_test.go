@@ -316,6 +316,51 @@ func markSeenWithBareFetch(t *testing.T, srv *testServer) {
 	require.NoError(t, err)
 }
 
+// THE READ-ONLY GUARANTEE, at the seam one layer below TestFetchNeverMarksMessagesSeen.
+//
+// That test proves the *outcome* — no message ends up \Seen — which is really
+// a property of BODY.PEEK[] vs BODY[] in the FETCH command. This test proves
+// a stronger, earlier fact: the mailbox is opened with EXAMINE, not SELECT,
+// in the first place. A compliant server refuses every write command in an
+// EXAMINE'd session (STORE, EXPUNGE, ...) regardless of what a later bug in
+// this codebase asks it to do, so this is the belt behind BODY.PEEK[]'s brace.
+//
+// go-imap's in-memory server does not expose which command a client sent, so
+// this asserts at the closest available seam instead: recordingSession (see
+// testserver_test.go) wraps the server's own Session and records the
+// imap.SelectOptions it was handed for every SELECT/EXAMINE. That value is
+// populated by the server itself from the command name on the wire (SELECT ->
+// false, EXAMINE -> true), so recording it is equivalent to recording which
+// command arrived.
+func TestFetchOpensMailboxesWithExamineNotSelect(t *testing.T) {
+	srv := newTestServer(t)
+	srv.CreateMailbox("Archive")
+	srv.Append("INBOX", "one", time.Now().Add(-time.Hour))
+	srv.Append("Archive", "two", time.Now().Add(-time.Hour))
+
+	p := newProvider(t, srv, func(o *mmimap.Options) { o.Mailboxes = []string{"INBOX", "Archive"} })
+	_, state := fetchAll(t, p, provider.SyncState{})
+
+	selects := srv.Selects()
+	require.Len(t, selects, 2, "one SELECT/EXAMINE per configured mailbox")
+	for _, sel := range selects {
+		assert.True(t, sel.ReadOnly,
+			"mailbox %q was opened with SELECT, not EXAMINE: mail-muncher must never open a mailbox "+
+				"for writing (see CONTRIBUTING.md and README.md)", sel.Mailbox)
+	}
+
+	// And again on the incremental path, which reuses the connection logic but
+	// takes a different branch inside fetchMailbox — it must not regress
+	// independently.
+	srv.Append("INBOX", "three", time.Now())
+	_, _ = fetchAll(t, p, state)
+	for _, sel := range srv.Selects() {
+		assert.True(t, sel.ReadOnly,
+			"mailbox %q was opened with SELECT, not EXAMINE: mail-muncher must never open a mailbox "+
+				"for writing (see CONTRIBUTING.md and README.md)", sel.Mailbox)
+	}
+}
+
 // Cancelling the context is the hard stop: it must be reported as such rather
 // than as a mysterious connection error, and it must not be retried.
 func TestFetchRespectsContextCancellation(t *testing.T) {

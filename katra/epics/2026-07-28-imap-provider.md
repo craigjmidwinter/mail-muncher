@@ -6,7 +6,7 @@ tags:
     - imap
 summary: Second provider behind the same interface; unlocks non-Gmail accounts
 type: epic
-status: planned
+status: done
 horizon: now
 ---
 

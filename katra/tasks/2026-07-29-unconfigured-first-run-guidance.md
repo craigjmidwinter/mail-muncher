@@ -8,7 +8,7 @@ tags:
     - agents
 summary: Every command, run with nothing set up, explains what is missing and what the options cost
 type: task
-status: todo
+status: done
 effort: M
 epic: adoption-and-onboarding
 ---

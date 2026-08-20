@@ -7,7 +7,7 @@ tags:
     - ux
 summary: Cut time-to-first-email; make the unconfigured state self-explanatory
 type: epic
-status: planned
+status: active
 horizon: now
 ---
 

@@ -6,7 +6,7 @@ tags:
     - filters
 summary: Composable match nodes (all/any/not + predicates), ordered rules, first match wins
 type: task
-status: todo
+status: done
 effort: M
 epic: filter-engine
 ---

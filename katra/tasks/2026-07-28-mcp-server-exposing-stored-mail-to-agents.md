@@ -7,7 +7,7 @@ tags:
     - mcp
 summary: 'mail-muncher mcp: stdio MCP server with list/read/search/sync tools over archived mail'
 type: task
-status: todo
+status: done
 effort: L
 epic: agent-interface
 ---

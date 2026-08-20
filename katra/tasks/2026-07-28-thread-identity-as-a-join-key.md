@@ -8,7 +8,7 @@ tags:
     - threading
 summary: Carry provider thread id through to frontmatter, with a References-derived fallback
 type: task
-status: todo
+status: done
 effort: M
 epic: agent-interface
 ---

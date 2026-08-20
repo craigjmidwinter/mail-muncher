@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net"
@@ -112,7 +113,7 @@ func LoadOAuthConfig(credentialsFile string) (*oauth2.Config, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("%w: %s\n"+
 				"Create a Desktop app OAuth client in the Google Cloud Console, download its JSON, "+
-				"and save it there (or point `gmail.credentials_file` at it). See %s.",
+				"and save it there (or point `gmail.credentials_file` at it). See %s",
 				ErrCredentialsMissing, credentialsFile, SetupDoc)
 		}
 		return nil, fmt.Errorf("gmail: read credentials %s: %w", credentialsFile, err)
@@ -358,10 +359,17 @@ func (a *Authorizer) callbackHandler(state string, results chan<- callbackResult
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if res.err != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, failurePage, res.err.Error())
+			// res.err can carry Google's `error`/`error_description` redirect
+			// query params verbatim (see authErrorText), so it is untrusted
+			// input landing in an HTML response -- escape it before it goes
+			// anywhere near the page.
+			//
+			// Best-effort: the browser tab is cosmetic. The result the CLI
+			// actually cares about already went over the `results` channel above.
+			_, _ = fmt.Fprintf(w, failurePage, html.EscapeString(res.err.Error()))
 			return
 		}
-		fmt.Fprint(w, successPage)
+		_, _ = fmt.Fprint(w, successPage)
 	})
 	return mux
 }
@@ -390,9 +398,11 @@ func (a *Authorizer) prompt(ctx context.Context, authURL string) {
 		out = os.Stdout
 	}
 
-	fmt.Fprintf(out, "Authorizing Gmail account %q.\n", a.Account)
-	fmt.Fprintf(out, "Open this URL in a browser and grant read-only access:\n\n%s\n\n", authURL)
-	fmt.Fprintln(out, "Waiting for the browser to redirect back...")
+	// Best-effort: out is a terminal or a captured buffer in tests, and a
+	// failed write here is not a reason to abort authorization.
+	_, _ = fmt.Fprintf(out, "Authorizing Gmail account %q.\n", a.Account)
+	_, _ = fmt.Fprintf(out, "Open this URL in a browser and grant read-only access:\n\n%s\n\n", authURL)
+	_, _ = fmt.Fprintln(out, "Waiting for the browser to redirect back...")
 
 	open := a.OpenBrowser
 	if open == nil {
@@ -423,6 +433,10 @@ func openBrowser(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("no browser opener: %w", err)
 	}
+	//nolint:gosec // G204: path is never attacker- or user-controlled -- it
+	// comes only from exec.LookPath on one of three hardcoded names
+	// (open/rundll32/xdg-open) chosen by runtime.GOOS above, and url is the
+	// OAuth consent URL this package built itself.
 	return exec.CommandContext(ctx, path, append(args, url)...).Start()
 }
 

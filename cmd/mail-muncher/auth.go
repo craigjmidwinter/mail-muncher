@@ -70,7 +70,9 @@ func newAuthCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Authorized %q; token written to %s\n", opts.Account, opts.TokenFile)
+			// Best-effort: the command has already succeeded; a failed write to
+			// stdout here is not a reason to report failure.
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Authorized %q; token written to %s\n", opts.Account, opts.TokenFile)
 			return nil
 		},
 	}

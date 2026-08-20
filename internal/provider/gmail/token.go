@@ -64,6 +64,11 @@ func SaveToken(path string, tok *oauth2.Token) error {
 		return errors.New("gmail: refusing to save a nil token")
 	}
 
+	//nolint:gosec // G117: this is the token *cache* -- persisting the OAuth
+	// token to disk is SaveToken's whole job, not an accidental leak. It is
+	// written to tokenFilePerm (0600) in a tokenDirPerm (0700) directory,
+	// which is the actual mitigation (see the type doc above and
+	// CONTRIBUTING.md's "Tokens and state are written 0600...").
 	data, err := json.MarshalIndent(tok, "", "  ")
 	if err != nil {
 		return fmt.Errorf("gmail: encode token: %w", err)

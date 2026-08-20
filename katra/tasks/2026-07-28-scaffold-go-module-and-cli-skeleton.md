@@ -7,7 +7,7 @@ tags:
     - cli
 summary: go.mod, cobra commands (run/daemon/auth/validate), Makefile, package layout
 type: task
-status: todo
+status: done
 effort: S
 epic: core-skeleton-and-config
 ---

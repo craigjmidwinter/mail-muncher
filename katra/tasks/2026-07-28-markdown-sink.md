@@ -7,7 +7,7 @@ tags:
     - markdown
 summary: 'Optional per-rule .md rendering: frontmatter + html-to-markdown body + attachments dir'
 type: task
-status: todo
+status: done
 effort: M
 epic: storage-sinks
 ---

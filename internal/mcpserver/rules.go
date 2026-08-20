@@ -169,7 +169,7 @@ func resolveDomainFile(path string) DomainFileInfo {
 
 	info.Exists = true
 	info.ModifiedAt = st.ModTime().UTC()
-	if domains := (*filter.DomainFiles)(nil).Domains(path); len(domains) > 0 {
+	if domains := (*filter.Files)(nil).Domains(path); len(domains) > 0 {
 		info.Domains = domains
 	} else {
 		info.Note = "file is empty or lists no usable domains; this predicate currently matches nothing"

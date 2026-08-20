@@ -7,7 +7,7 @@ tags:
     - jobsearch
 summary: 'from_domains_file: newline list maintained by another app, re-read every cycle'
 type: task
-status: todo
+status: done
 effort: S
 epic: filter-engine
 ---

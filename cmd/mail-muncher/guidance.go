@@ -33,8 +33,6 @@ const (
 	// kindTokenRejected: a stored token the provider refused; on Gmail this is
 	// usually the 7-day Testing-mode refresh-token expiry.
 	kindTokenRejected = "token-rejected"
-	// kindNoRules: a usable config that would discard every message it fetched.
-	kindNoRules = "no-rules"
 )
 
 // setupError is a failure the user fixes by running a named command, carrying
@@ -296,7 +294,9 @@ func reportSetupAdvice(w io.Writer, cfg *config.Config) {
 		return
 	}
 	if len(cfg.Rules) == 0 {
-		fmt.Fprintln(w, noRulesGuidance(cfg.Path))
+		// Best-effort: this is advisory output on stderr, and a failed write here
+		// (a closed pipe, say) is not a reason to fail the command.
+		_, _ = fmt.Fprintln(w, noRulesGuidance(cfg.Path))
 	}
 	for i := range cfg.Accounts {
 		a := &cfg.Accounts[i]
@@ -313,7 +313,8 @@ func reportSetupAdvice(w io.Writer, cfg *config.Config) {
 		if !fileExists(a.Gmail.CredentialsFile) {
 			continue
 		}
-		fmt.Fprintln(w, notAuthorizedGuidance(cfg.Path, a.Name, a.Gmail.TokenFile, nil))
+		// Best-effort, same as the no-rules case above.
+		_, _ = fmt.Fprintln(w, notAuthorizedGuidance(cfg.Path, a.Name, a.Gmail.TokenFile, nil))
 	}
 }
 

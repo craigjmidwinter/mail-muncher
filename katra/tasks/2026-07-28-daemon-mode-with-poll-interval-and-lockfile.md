@@ -6,7 +6,7 @@ tags:
     - daemon
 summary: 'mail-muncher daemon --interval 5m: loop, jitter, graceful shutdown, single-instance lock'
 type: task
-status: todo
+status: done
 effort: M
 epic: run-modes-and-operations
 ---

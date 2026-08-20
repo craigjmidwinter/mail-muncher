@@ -7,7 +7,7 @@ tags:
     - agents
 summary: A second program-owned predicate, for senders whose host cannot be predicted
 type: task
-status: todo
+status: doing
 effort: M
 epic: filter-engine
 ---

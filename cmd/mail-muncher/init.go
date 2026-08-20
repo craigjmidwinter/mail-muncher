@@ -165,8 +165,10 @@ func runInit(cmd *cobra.Command, opts *initOptions) error {
 		return &pipeline.ExitCodeError{Code: pipeline.ExitConfig, Err: err}
 	}
 
-	fmt.Fprintf(out, "Wrote %s\n\n", opts.configPath)
-	fmt.Fprintln(out, nextSteps(opts))
+	// Best-effort: the config file write above already succeeded; a failed
+	// terminal write does not undo that or change the exit status.
+	_, _ = fmt.Fprintf(out, "Wrote %s\n\n", opts.configPath)
+	_, _ = fmt.Fprintln(out, nextSteps(opts))
 	return nil
 }
 
@@ -208,7 +210,7 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 		}
 	}
 	if o.provider == "" {
-		fmt.Fprintln(out, providerChoiceText())
+		_, _ = fmt.Fprintln(out, providerChoiceText())
 		answer, err := prompt(r, out, "Provider ("+strings.Join(initProviders, "/")+")", "")
 		if err != nil {
 			return err
@@ -228,7 +230,7 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 	// the no-bundled-oauth-client decision — and surprising someone with it
 	// after they have invested is the avoidable part.
 	if o.provider == "gmail" {
-		fmt.Fprintln(out, gmailCostWarning())
+		_, _ = fmt.Fprintln(out, gmailCostWarning())
 	}
 
 	if o.account == "" && !o.assumeYes {
@@ -262,10 +264,12 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 // blank. A closed stdin is not an error: it means nobody is there to answer, so
 // the default stands.
 func prompt(r *bufio.Reader, out io.Writer, question, def string) (string, error) {
+	// Best-effort: out is the terminal (or a captured buffer in tests); a
+	// failed prompt write is not worth failing an interactive init over.
 	if def == "" {
-		fmt.Fprintf(out, "%s: ", question)
+		_, _ = fmt.Fprintf(out, "%s: ", question)
 	} else {
-		fmt.Fprintf(out, "%s [%s]: ", question, def)
+		_, _ = fmt.Fprintf(out, "%s [%s]: ", question, def)
 	}
 	line, err := r.ReadString('\n')
 	answer := strings.TrimSpace(line)
@@ -277,7 +281,7 @@ func prompt(r *bufio.Reader, out io.Writer, question, def string) (string, error
 					"to run non-interactively", question),
 			}
 		}
-		fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out)
 		return def, nil
 	}
 	if answer == "" {

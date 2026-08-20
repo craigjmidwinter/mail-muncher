@@ -6,7 +6,7 @@ tags:
     - filters
 summary: Rule schema, composable predicates, externally-managed domain lists
 type: epic
-status: planned
+status: active
 horizon: now
 ---
 

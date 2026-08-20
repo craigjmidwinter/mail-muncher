@@ -6,7 +6,7 @@ tags:
     - architecture
 summary: Provider contract yielding raw RFC822 + JSON sync-state persistence
 type: task
-status: todo
+status: done
 effort: S
 epic: gmail-provider
 ---

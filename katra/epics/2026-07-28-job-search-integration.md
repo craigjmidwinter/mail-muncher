@@ -6,7 +6,7 @@ tags:
     - jobsearch
 summary: 'Prove it out: pull mail from applied-to company domains into a folder'
 type: epic
-status: planned
+status: active
 horizon: next
 ---
 

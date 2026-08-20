@@ -6,7 +6,7 @@ tags:
     - ops
 summary: run-once for cron, daemon with poll interval, dry-run, lockfile
 type: epic
-status: planned
+status: done
 horizon: next
 ---
 

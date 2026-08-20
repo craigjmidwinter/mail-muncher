@@ -6,7 +6,7 @@ tags:
     - pipeline
 summary: 'run: fetch -> parse -> evaluate -> sinks, dry-run mode, run summary, exit codes'
 type: task
-status: todo
+status: done
 effort: M
 epic: run-modes-and-operations
 ---

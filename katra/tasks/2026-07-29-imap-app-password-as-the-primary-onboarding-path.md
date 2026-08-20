@@ -7,7 +7,7 @@ tags:
     - adoption
 summary: Promote IMAP from 'later' to the fast path, and document the credential trade honestly
 type: task
-status: todo
+status: done
 effort: S
 epic: adoption-and-onboarding
 ---

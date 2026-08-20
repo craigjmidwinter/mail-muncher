@@ -7,7 +7,7 @@ tags:
     - pipeline
 summary: 'run --json: per-message manifest of what a cycle stored, on stdout'
 type: task
-status: todo
+status: done
 effort: S
 epic: agent-interface
 ---

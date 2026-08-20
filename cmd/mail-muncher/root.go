@@ -26,11 +26,19 @@ func (e *notImplementedError) Error() string {
 	return fmt.Sprintf("%s: not implemented", e.command)
 }
 
+// notImplemented is the stub helper for a future subcommand, and is unused on
+// purpose. root_test.go's TestSubcommandStubsAreNotImplemented documents how a
+// new stub gets wired here — every command implemented so far grew out of this
+// pattern, and the list there is kept empty rather than deleted so the next one
+// only has to be named.
+//
+//nolint:unused // deliberately unused; see above.
 func notImplemented(cmd *cobra.Command) error {
 	// Cobra would otherwise print usage for any returned error; these stubs
 	// are not usage problems.
 	cmd.SilenceUsage = true
-	fmt.Fprintln(cmd.OutOrStdout(), "not implemented")
+	// Best-effort: the caller learns the same thing from the returned error.
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), "not implemented")
 	return &notImplementedError{command: cmd.Name()}
 }
 

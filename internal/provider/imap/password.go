@@ -53,6 +53,10 @@ func runPasswordCmd(ctx context.Context, command string, timeout time.Duration) 
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
+	//nolint:gosec // G204: command is the user's own `imap.password_cmd` from
+	// their config, run through a shell on purpose so pipelines and quoting
+	// work the way they do in the config file (see the doc comment above) --
+	// exactly the same trust model as git's credential.helper.
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

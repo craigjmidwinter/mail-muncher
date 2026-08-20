@@ -30,6 +30,27 @@ func TestLoadOAuthConfigParsesDesktopClient(t *testing.T) {
 	require.Equal(t, "https://oauth2.googleapis.com/token", cfg.Endpoint.TokenURL)
 }
 
+// THE READ-ONLY GUARANTEE.
+//
+// mail-muncher's entire safety story for Gmail rests on one fact: the only
+// OAuth scope it ever asks for is gmail.readonly. That scope cannot label,
+// trash, send or otherwise write to a mailbox no matter what the code around
+// it does — so this is the seam a regression here is cheapest to catch at.
+// Two things can break it: the Scope constant itself changing to (or gaining)
+// a wider scope, or LoadOAuthConfig somehow requesting more scopes than the
+// one constant names. This test pins both, independently of
+// TestLoadOAuthConfigParsesDesktopClient above, so it keeps failing even if
+// that test is later rewritten to check other fields of the parsed config.
+func TestScopeIsReadOnlyAndNothingElse(t *testing.T) {
+	require.Equal(t, "https://www.googleapis.com/auth/gmail.readonly", Scope,
+		"the Gmail scope must be exactly gmail.readonly; any other value grants write access")
+
+	cfg, err := LoadOAuthConfig(filepath.Join("testdata", "credentials.json"))
+	require.NoError(t, err)
+	require.Len(t, cfg.Scopes, 1, "exactly one scope may ever be requested from Google")
+	require.Equal(t, Scope, cfg.Scopes[0], "the one scope requested must be the read-only one")
+}
+
 func TestLoadOAuthConfigMissingFilePointsAtSetupDoc(t *testing.T) {
 	_, err := LoadOAuthConfig(filepath.Join(t.TempDir(), "absent.json"))
 	require.ErrorIs(t, err, ErrCredentialsMissing)

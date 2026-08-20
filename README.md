@@ -1521,9 +1521,10 @@ seen set is only belt and braces.
 ## Status and scope
 
 Pre-1.0. The current release is
-[v0.1.0](https://github.com/craigjmidwinter/mail-muncher/releases/latest); a
-build without `make` reports its version as `dev`. The config schema is stable
-enough to write against, but treat it as subject to change until 1.0.
+[v0.4.0](https://github.com/craigjmidwinter/mail-muncher/releases/latest), and
+what changed in each one is in [CHANGELOG.md](CHANGELOG.md); a build without
+`make` reports its version as `dev`. The config schema is stable enough to
+write against, but treat it as subject to change until 1.0.
 
 | Area | Status |
 | --- | --- |

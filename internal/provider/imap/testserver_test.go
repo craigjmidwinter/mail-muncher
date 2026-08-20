@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +45,84 @@ type testServer struct {
 	Port      int
 	User      *imapmemserver.User
 	TLSConfig *tls.Config // client-side config trusting the throwaway CA; nil when plaintext
+
+	// selectMu guards selects, which records every SELECT/EXAMINE the server
+	// has seen, across every connection — the provider dials, logs in and logs
+	// out again on each Fetch (see the doc comment on Provider), so a single
+	// test can easily span more than one connection.
+	selectMu sync.Mutex
+	selects  []selectCall
+}
+
+// selectCall is one SELECT or EXAMINE the server received, as the server
+// itself parsed it — not as the client claims to have sent it.
+type selectCall struct {
+	Mailbox  string
+	ReadOnly bool
+}
+
+// recordSelect is called by recordingSession.Select for every mailbox this
+// server opens.
+func (s *testServer) recordSelect(mailbox string, readOnly bool) {
+	s.selectMu.Lock()
+	defer s.selectMu.Unlock()
+	s.selects = append(s.selects, selectCall{Mailbox: mailbox, ReadOnly: readOnly})
+}
+
+// Selects returns every SELECT/EXAMINE this server has received so far,
+// across every connection, in order.
+func (s *testServer) Selects() []selectCall {
+	s.selectMu.Lock()
+	defer s.selectMu.Unlock()
+	out := make([]selectCall, len(s.selects))
+	copy(out, s.selects)
+	return out
+}
+
+// recordingSession wraps the real in-memory session and observes the
+// imap.SelectOptions each SELECT/EXAMINE actually carried. This is the
+// closest seam to the wire available through this harness: imapmemserver
+// itself does not expose which command a client sent, but imapserver hands
+// every Session.Select call the ReadOnly bit it parsed off the wire (SELECT
+// decodes to false, EXAMINE to true — see go-imap's imapserver/select.go), so
+// recording that argument is equivalent to recording the command name.
+//
+// The wrapped field is typed as the plain imapserver.Session interface, which
+// only promotes that interface's methods — not the richer
+// imapserver.SessionIMAP4rev2 (Namespace, Move) the wrapped *serverSession
+// actually implements. imapserver type-asserts for those at runtime to decide
+// what to advertise, so without forwarding them explicitly here the server
+// would advertise IMAP4rev2 and then panic the first time a session in this
+// wrapper was asked for it. Namespace and Move forward to the underlying
+// session; nothing under test calls either.
+type recordingSession struct {
+	imapserver.Session
+	srv *testServer
+}
+
+var (
+	_ imapserver.SessionIMAP4rev2 = (*recordingSession)(nil)
+)
+
+func (s *recordingSession) Select(mailbox string, options *goimap.SelectOptions) (*goimap.SelectData, error) {
+	s.srv.recordSelect(mailbox, options != nil && options.ReadOnly)
+	return s.Session.Select(mailbox, options)
+}
+
+func (s *recordingSession) Namespace() (*goimap.NamespaceData, error) {
+	ns, ok := s.Session.(imapserver.SessionNamespace)
+	if !ok {
+		return nil, errors.New("recordingSession: wrapped session does not support NAMESPACE")
+	}
+	return ns.Namespace()
+}
+
+func (s *recordingSession) Move(w *imapserver.MoveWriter, numSet goimap.NumSet, dest string) error {
+	mv, ok := s.Session.(imapserver.SessionMove)
+	if !ok {
+		return errors.New("recordingSession: wrapped session does not support MOVE")
+	}
+	return mv.Move(w, numSet, dest)
 }
 
 // newTestServer starts a plaintext in-memory IMAP server with an empty INBOX.
@@ -69,9 +148,11 @@ func startTestServer(t *testing.T, useTLS bool) *testServer {
 	}
 	mem.AddUser(user)
 
+	ts := &testServer{t: t, User: user}
+
 	srv := imapserver.New(&imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return mem.NewSession(), nil, nil
+			return &recordingSession{Session: mem.NewSession(), srv: ts}, nil, nil
 		},
 		InsecureAuth: !useTLS,
 		Caps: goimap.CapSet{
@@ -85,7 +166,6 @@ func startTestServer(t *testing.T, useTLS bool) *testServer {
 		t.Fatalf("listen: %v", err)
 	}
 
-	ts := &testServer{t: t, User: user}
 	if useTLS {
 		serverCfg, clientCfg := testTLSConfigs(t)
 		ln = tls.NewListener(ln, serverCfg)

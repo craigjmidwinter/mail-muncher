@@ -7,7 +7,7 @@ tags:
     - adoption
 summary: 'mail-muncher init: pick a provider, write a valid config, say what to run next'
 type: task
-status: todo
+status: done
 effort: M
 epic: adoption-and-onboarding
 ---

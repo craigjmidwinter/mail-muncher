@@ -29,11 +29,26 @@ issue.
 | `make tidy` | `go mod tidy` |
 | `make clean` | Removes the binary. |
 
-**`golangci-lint` is not required and is probably not installed.** `make lint`
-prints `golangci-lint not found; falling back to go vet` and runs `go vet`. That
-fallback is the supported path — do not add a hard dependency on golangci-lint,
-and do not commit a change whose only justification is a linter you have locally
-and nobody else does. `go vet` and `gofmt` are the floor.
+**`golangci-lint` is optional locally and enforced in CI.** If you do not have
+it, `make lint` prints `golangci-lint not found; falling back to go vet` and
+runs `go vet` — that fallback is still supported, and you can work all day
+without installing anything. But CI's `build` job runs the full set on every
+pull request, so a finding you never saw locally can still fail your PR. If
+you would rather find out before pushing:
+
+```bash
+brew install golangci-lint   # or see golangci-lint.run/welcome/install
+```
+
+The set is pinned in `.golangci.yml`, which `golangci-lint run` discovers on
+its own — local and CI lint the same rules, with nothing to keep in sync. CI
+pins the binary to the version that file was written against; if your local
+version is newer and reports something CI does not, that is worth an issue
+rather than a silent `//nolint`.
+
+Every `//nolint` in this repo carries a reason on the same line. Add yours the
+same way, or fix the finding. `go vet` and `gofmt` remain the floor: both are
+hard-failing CI steps of their own.
 
 Run these before you push:
 

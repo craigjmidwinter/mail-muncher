@@ -6,7 +6,7 @@ tags:
     - imap
 summary: 'go-imap/v2 implementation: UID-based incremental fetch, any-provider config block'
 type: task
-status: todo
+status: done
 effort: L
 epic: imap-provider
 ---

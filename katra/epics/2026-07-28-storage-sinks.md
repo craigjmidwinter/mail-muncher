@@ -6,7 +6,7 @@ tags:
     - storage
 summary: Idempotent .eml writer plus optional markdown rendering
 type: epic
-status: planned
+status: done
 horizon: now
 ---
 

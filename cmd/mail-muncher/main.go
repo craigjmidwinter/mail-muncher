@@ -15,7 +15,9 @@ func main() {
 		return
 	}
 	if msg := fatalMessage(err); msg != "" {
-		fmt.Fprint(os.Stderr, msg)
+		// Best-effort: os.Exit happens right after regardless of whether this
+		// write lands.
+		_, _ = fmt.Fprint(os.Stderr, msg)
 	}
 	os.Exit(exitStatus(err))
 }

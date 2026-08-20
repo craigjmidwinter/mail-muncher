@@ -7,7 +7,7 @@ tags:
     - oauth
 summary: 'mail-muncher auth: loopback OAuth flow, token refresh, gmail.readonly scope'
 type: task
-status: todo
+status: done
 effort: M
 epic: gmail-provider
 ---

@@ -6,7 +6,7 @@ tags:
     - storage
 summary: Write byte-faithful .eml under dest/YYYY/MM with deterministic collision-free names
 type: task
-status: todo
+status: done
 effort: M
 epic: storage-sinks
 ---

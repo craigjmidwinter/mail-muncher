@@ -6,7 +6,7 @@ tags:
     - gmail
 summary: users.messages.list + get format=RAW, bounded concurrency, rate-limit backoff
 type: task
-status: todo
+status: done
 effort: M
 epic: gmail-provider
 ---

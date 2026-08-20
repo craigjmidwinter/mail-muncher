@@ -14,6 +14,10 @@ test:
 	go test ./...
 
 # Use golangci-lint when it is installed; otherwise fall back to go vet.
+# `golangci-lint run` with no arguments picks up the committed .golangci.yml
+# automatically, so this runs the exact same lint set CI's "Lint" step does
+# (see .github/workflows/ci.yml) -- there is no separate CI-only config to
+# drift out of sync with.
 lint:
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		echo "golangci-lint run"; \

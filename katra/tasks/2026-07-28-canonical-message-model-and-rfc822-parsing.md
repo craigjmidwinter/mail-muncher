@@ -6,7 +6,7 @@ tags:
     - parsing
 summary: Parse raw RFC822 into a provider-neutral Message via enmime
 type: task
-status: todo
+status: done
 effort: M
 epic: core-skeleton-and-config
 ---

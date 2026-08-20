@@ -7,7 +7,7 @@ tags:
     - cli
 summary: Go module, cobra CLI, config schema, canonical message model
 type: epic
-status: planned
+status: done
 horizon: now
 ---
 

@@ -8,7 +8,7 @@ tags:
     - docs
 summary: Name the long-lookback first run as a supported mode; 720h default hides it
 type: task
-status: todo
+status: done
 effort: S
 epic: run-modes-and-operations
 ---

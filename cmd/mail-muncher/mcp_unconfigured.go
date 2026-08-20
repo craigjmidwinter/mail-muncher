@@ -41,7 +41,9 @@ var unconfiguredToolNames = []string{
 // The exit status is unchanged either way: a config failure is still 1.
 func mcpStartupFailure(ctx context.Context, cmd *cobra.Command, err error) error {
 	text := startupText(err)
-	fmt.Fprintln(cmd.ErrOrStderr(), text)
+	// Best-effort: the function's real result is the returned error below; a
+	// failed stderr write does not change what mail-muncher exits with.
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), text)
 
 	if !launchedByClient(cmd.InOrStdin()) {
 		// Run by hand, or by a test: serving would block on a terminal forever,

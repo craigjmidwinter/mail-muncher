@@ -7,7 +7,7 @@ tags:
     - adoption
 summary: Ship binaries on every release and a brew tap; drop the Go toolchain requirement
 type: task
-status: todo
+status: done
 effort: M
 epic: adoption-and-onboarding
 ---

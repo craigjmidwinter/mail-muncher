@@ -7,7 +7,7 @@ tags:
     - mcp
 summary: Machine-readable run output plus an MCP server, so agents consume mail directly
 type: epic
-status: planned
+status: done
 horizon: next
 ---
 

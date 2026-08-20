@@ -128,9 +128,10 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	}
 	tmpName := tmp.Name()
 	defer func() {
-		// No-op once the rename has succeeded.
-		tmp.Close()
-		os.Remove(tmpName)
+		// No-op once the rename has succeeded; a failure past that point is
+		// just a leftover temp file, not something this write can still act on.
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 	}()
 
 	if err := writeAndSync(tmp, data); err != nil {
@@ -156,7 +157,7 @@ func syncDir(dir string) {
 	if err != nil {
 		return
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	_ = d.Sync()
 }
 

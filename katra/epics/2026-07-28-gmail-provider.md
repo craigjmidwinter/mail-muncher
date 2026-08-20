@@ -7,7 +7,7 @@ tags:
     - oauth
 summary: OAuth flow, raw message fetch, incremental sync via history API
 type: epic
-status: planned
+status: done
 horizon: now
 ---
 

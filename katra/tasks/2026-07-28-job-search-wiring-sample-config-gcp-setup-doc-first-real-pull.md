@@ -7,7 +7,7 @@ tags:
     - docs
 summary: README + docs/gmail-setup.md, examples/job-search.yml, verified real run against Gmail
 type: task
-status: todo
+status: done
 effort: S
 epic: job-search-integration
 ---

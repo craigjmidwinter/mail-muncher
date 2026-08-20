@@ -6,7 +6,7 @@ tags:
     - config
 summary: YAML schema for accounts + rules, path expansion, validate command
 type: task
-status: todo
+status: done
 effort: M
 epic: core-skeleton-and-config
 ---

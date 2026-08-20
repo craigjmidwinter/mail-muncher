@@ -7,7 +7,7 @@ tags:
     - sync
 summary: users.history.list from stored historyId; 404 => full-scan fallback
 type: task
-status: todo
+status: done
 effort: M
 epic: gmail-provider
 ---

@@ -61,24 +61,27 @@ func reportProblems(w io.Writer, cfg *config.Config, problems config.Problems) e
 	errs := problems.Errors()
 	warnings := problems.Warnings()
 
-	fmt.Fprintf(w, "config: %s\n", cfg.Path)
-	fmt.Fprintf(w, "%d account(s), %d rule(s), state_dir %s\n", len(cfg.Accounts), len(cfg.Rules), cfg.StateDir)
+	// Best-effort throughout: w is stdout (or a captured buffer in tests), and
+	// a failed write here does not change whether the config is valid -- that
+	// verdict is the switch below and its returned error.
+	_, _ = fmt.Fprintf(w, "config: %s\n", cfg.Path)
+	_, _ = fmt.Fprintf(w, "%d account(s), %d rule(s), state_dir %s\n", len(cfg.Accounts), len(cfg.Rules), cfg.StateDir)
 
 	for _, p := range errs {
-		fmt.Fprintln(w, p)
+		_, _ = fmt.Fprintln(w, p)
 	}
 	for _, p := range warnings {
-		fmt.Fprintln(w, p)
+		_, _ = fmt.Fprintln(w, p)
 	}
 
 	switch {
 	case len(errs) > 0:
-		fmt.Fprintf(w, "FAILED: %s, %s\n", plural(len(errs), "error"), plural(len(warnings), "warning"))
+		_, _ = fmt.Fprintf(w, "FAILED: %s, %s\n", plural(len(errs), "error"), plural(len(warnings), "warning"))
 		return fmt.Errorf("config is invalid: %s", plural(len(errs), "error"))
 	case len(warnings) > 0:
-		fmt.Fprintf(w, "OK with %s\n", plural(len(warnings), "warning"))
+		_, _ = fmt.Fprintf(w, "OK with %s\n", plural(len(warnings), "warning"))
 	default:
-		fmt.Fprintln(w, "OK")
+		_, _ = fmt.Fprintln(w, "OK")
 	}
 
 	return nil

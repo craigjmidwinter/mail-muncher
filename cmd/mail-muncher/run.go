@@ -130,6 +130,8 @@ func writeManifests(w io.Writer, manifests []pipeline.Manifest, jsonOut bool) {
 			}
 			continue
 		}
-		fmt.Fprintln(w, m.Line())
+		// Best-effort: matches the JSON branch above, which only logs a write
+		// failure rather than failing the cycle over it.
+		_, _ = fmt.Fprintln(w, m.Line())
 	}
 }

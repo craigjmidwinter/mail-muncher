@@ -1,0 +1,121 @@
+# golangci-lint configuration. Schema version 2 (golangci-lint v2.x) --
+# v1 and v2 config files are not interchangeable, so match the major version
+# of the `golangci-lint` binary CI and contributors actually run
+# (`golangci-lint --version`) before touching this file.
+#
+# The set below is the language's standard lint set plus a short, specific
+# list of additions, each picked for a failure mode this codebase actually
+# has (an HTTP-heavy Gmail provider, hand-rolled error wrapping, a CLI that
+# shells out to the filesystem) -- not an exotic everything-on config. See
+# CONTRIBUTING.md for how `make lint` uses this file, and how it falls back
+# to `go vet` when golangci-lint isn't installed.
+version: "2"
+
+run:
+  # Generous but bounded: a warm cache lints this module in well under a
+  # minute, but the *first* run on a machine -- a fresh CI runner every time,
+  # or a contributor's first `make lint` -- has to build staticcheck/gosec's
+  # whole-program analysis facts across a dependency graph that pulls in
+  # grpc, otel and google-api-go-client. That cold pass was measured at over
+  # 25 minutes on an M-series laptop with an empty GOCACHE, so 5m and 10m
+  # both measured short: a lint that dies on the clock is a false CI failure,
+  # which is worse than a slow job. This is a backstop against a genuine
+  # hang, not a budget -- warm runs finish in ~1.4s and never approach it.
+  timeout: 30m
+
+linters:
+  # Start from nothing and enable explicitly, rather than "default: standard"
+  # plus a disable list -- an explicit enable list is the one that stays
+  # readable as golangci-lint adds new linters to its own defaults over time.
+  default: none
+  enable:
+    # --- golangci-lint's own default set -------------------------------
+    - errcheck # Unchecked error returns are exactly the bug class `go vet`
+      # doesn't catch and this project's error-carries-the-fix
+      # house style (CONTRIBUTING.md) depends on every error
+      # actually being looked at.
+    - govet # Standard `go vet` passes (already run separately in CI, but
+      # golangci-lint runs it incrementally and reports it inline
+      # with everything else).
+    - ineffassign # Assignments that are immediately overwritten usually mean a
+      # bug (wrong variable, dropped error) rather than intentional
+      # dead code.
+    - staticcheck # honnef.co/go/tools's SA/S/ST checks -- as of golangci-lint
+      # v2 this linter alone covers what used to be split across
+      # staticcheck and gosimple, so there is no separate
+      # `gosimple` entry to add.
+    - unused # Dead code left behind after a refactor; cheap to catch,
+      # expensive to notice by reading.
+
+    # --- additions for this codebase's specific risk areas --------------
+    - misspell # English-word typos in comments, doc strings and the error
+      # messages this project treats as user-facing copy
+      # (CONTRIBUTING.md: "errors carry the fix").
+    - revive # Light stand-in for golint (which golangci-lint no longer
+      # ships). Configured below with a small rule set rather than
+      # its full opinionated default -- see `linters.settings.revive`.
+    - bodyclose # internal/provider/gmail drives Gmail's REST API directly
+      # over `net/http`; an unclosed response body here is a real
+      # connection/fd leak in a long-running sync loop, not a
+      # theoretical one.
+    - errorlint # This project wraps errors with `%w` and expects callers to
+      # `errors.Is`/`errors.As` them (see the provider retry logic
+      # and pipeline error handling); errorlint catches the
+      # `err == target` and non-%w-wrap mistakes that silently
+      # break that contract.
+    - gosec # Reads OAuth tokens and mail off disk and writes them back
+      # (0600/0700 file modes are a documented security property in
+      # CONTRIBUTING.md); gosec catches the permission and
+      # credential-handling mistakes that would quietly widen that
+      # exposure.
+
+  settings:
+    revive:
+      rules:
+        # A conservative subset of revive's recommended rules -- style
+        # checks that catch real readability problems (a bare `error`
+        # that shadows the package, an exported symbol with no doc
+        # comment) without dragging in the full opinionated rule set
+        # (whitespace nitpicks, naming conventions this repo doesn't
+        # follow).
+        - name: error-strings # Matches the Go convention this repo already
+          # follows: lower-case, no trailing punctuation.
+        - name: error-return # Error should be the last return value.
+        - name: unreachable-code
+        - name: context-as-argument # `context.Context` should be the first
+          # parameter, matching every provider method
+          # already in this codebase.
+
+    gosec:
+      excludes:
+        # G304 (file path from a variable) and G703 (path traversal via
+        # taint analysis, the same idea tracked through more indirection --
+        # e.g. syncDir's `dir` derived from a config-supplied path) both fire
+        # on essentially every read in this program: config paths, archive
+        # paths, OAuth token cache paths are all user-supplied by design --
+        # that's the point of a CLI that reads *your* config and archives to
+        # *your* disk. The mitigation is the 0600/0700 permission discipline
+        # documented in CONTRIBUTING.md, not refusing to open a path that
+        # came from a flag or config file.
+        - G304
+        - G703
+
+  exclusions:
+    rules:
+      # Test files get a narrower bar. errcheck and gosec exist to catch
+      # bugs that matter in production paths; in a table-driven test,
+      # `os.Remove(tmpfile)` in a defer or a deliberately-insecure fixture
+      # is noise, not a defect, and the *_test.go bar in this repo is
+      # coverage and clarity, not production hardening.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+
+formatters:
+  # gofmt/tidy are already enforced as a separate, earlier CI step (see
+  # .github/workflows/ci.yml's "Check formatting" step) so they are not
+  # re-enabled here -- running the same check twice, once as a hard `gofmt
+  # -l` failure and once inside golangci-lint, would just produce two
+  # different error messages for the same problem.
+  enable: []
