@@ -224,3 +224,34 @@ bug this whole pass turned up.
 Measuring before changing. A forty-minute lint on every pull request is not a
 healthy repo, and shipping the gate without knowing which of those two worlds
 we are in would be leaving the job half done.
+
+## The measurement that overturned the obvious answer
+
+The gate came out, and the working theory went in with it: `gosec` is the
+expensive linter, so split it into a scheduled job and keep a fast gate on
+every PR. It is the tidy answer. It is also wrong, and the only reason we know
+is that the measurement was run instead of assumed.
+
+| Linter set, cold cache, same machine | Time |
+| --- | --- |
+| Full set, including `gosec` | ~26 min |
+| Same set, `gosec` disabled | 25m 54s |
+
+Six seconds. The security linter that found the only real bug in this pass is
+very nearly free, because the whole-program analysis it needs is already being
+built by `staticcheck` and `unused` for the dependency graph — grpc, otel,
+google-api-go-client. `gosec` is a passenger, not the driver.
+
+That reverses the recommendation. The lead worth chasing is the 579 KB that
+run one saved to `~/.cache/golangci-lint`, which is far too small to be those
+facts. Something about the caching is broken, and if it can be fixed the full
+set goes straight back into CI with nothing dropped. Only if that fails does
+splitting by *cost* — type-aware linters nightly, the rest per-PR — become the
+answer.
+
+The uncomfortable part is the order this happened in. The gate was added, the
+cost was discovered by CI rather than by me, and the fix was recommended
+before it was measured. The measurement took under half an hour and would have
+prevented all three. The lesson is not "measure more"; it is that a number I
+already had — 25 minutes, locally, before any of this shipped — was treated as
+a timeout to accommodate rather than a verdict to act on.

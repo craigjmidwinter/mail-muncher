@@ -51,11 +51,14 @@ jobs:
       # A `Lint` step running the full .golangci.yml set used to live here and
       # was removed after measurement, not on a hunch: on this runner it took
       # 51 minutes and then died on its own timeout (`exit code 4`) while
-      # reporting `0 issues`. staticcheck/gosec build whole-program analysis
-      # facts across grpc, otel and google-api-go-client, and the action's
-      # cache only saved 579 KB of that, so a second run would not have been
-      # meaningfully cheaper. A 51-minute gate on every pull request is worse
-      # than no gate.
+      # reporting `0 issues`. The cost is staticcheck/unused building
+      # whole-program analysis facts across grpc, otel and
+      # google-api-go-client -- measured, not guessed: disabling gosec changed
+      # a cold local run from ~26m to 25m54s, so the security linter is nearly
+      # free and splitting it out would fix nothing. The action's cache saved
+      # only 579 KB, which cannot be those facts, so a second run would not
+      # have been cheaper either. A 51-minute gate on every pull request is
+      # worse than no gate.
       #
       # .golangci.yml is still committed and `make lint` still runs the whole
       # set locally -- the config did its job, catching an unescaped
