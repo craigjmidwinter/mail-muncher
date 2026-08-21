@@ -7,6 +7,11 @@ tags:
     - hygiene
     - security
     - katra
+hash: 7c9a919
+stat:
+    f: 61
+    a: 1192
+    d: 78
 summary: Gap check against the fleet PROJECT-STANDARDS sections this repo predates
 closes:
     - standards-pass-hygiene-katra-practice-and-the-sweep
@@ -194,3 +199,28 @@ them reading while the other edited.
 The lesson is not to stop parallelising — it is that a finding which
 contradicts the rest of the evidence deserves a second look before it becomes
 a headline. That instinct is worth more than the four minutes it cost.
+
+## Postscript: the gate has a price, and it showed up in CI
+
+The lint step went in, and the first CI run on main took the `build / vet /
+test` job from under three minutes to over forty. Every earlier step passed in
+seconds; `Lint` sat there alone.
+
+This is the cold-cache cost, and it is not a surprise — a run against an empty
+`GOCACHE` was measured locally at over 25 minutes, which is why the config's
+timeout was raised from 10m to 30m before the commit went out. What is new is
+seeing it land on a fresh runner, where there is no warm cache to fall back on.
+`staticcheck` and `gosec` both build whole-program analysis facts, and this
+module's dependency graph pulls in grpc, otel and google-api-go-client.
+
+The open question is whether `golangci-lint-action`'s cache amortises it. If
+run two comes back in a couple of minutes, this is a one-time cost paid on
+cache misses and the gate is worth keeping as-is. If run two is also slow, the
+set has to change — and the obvious candidate to move is `gosec`, since it is
+the expensive one. That would be a real loss: `gosec` is what caught the
+unescaped `error_description` in the OAuth callback, which is the only genuine
+bug this whole pass turned up.
+
+Measuring before changing. A forty-minute lint on every pull request is not a
+healthy repo, and shipping the gate without knowing which of those two worlds
+we are in would be leaving the job half done.

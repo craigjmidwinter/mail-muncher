@@ -29,22 +29,24 @@ issue.
 | `make tidy` | `go mod tidy` |
 | `make clean` | Removes the binary. |
 
-**`golangci-lint` is optional locally and enforced in CI.** If you do not have
+**`golangci-lint` is optional, and CI does not run it.** If you do not have
 it, `make lint` prints `golangci-lint not found; falling back to go vet` and
-runs `go vet` — that fallback is still supported, and you can work all day
-without installing anything. But CI's `build` job runs the full set on every
-pull request, so a finding you never saw locally can still fail your PR. If
-you would rather find out before pushing:
+runs `go vet` — that fallback is supported, and you can work all day without
+installing anything. CI runs `gofmt`, `go vet` and `go test -race`; the full
+lint set is deliberately *not* a CI gate, because it was measured at 51
+minutes on a GitHub runner and a gate that slow costs more than it catches.
+
+That makes running it locally worth the trouble, since nothing else will:
 
 ```bash
 brew install golangci-lint   # or see golangci-lint.run/welcome/install
 ```
 
 The set is pinned in `.golangci.yml`, which `golangci-lint run` discovers on
-its own — local and CI lint the same rules, with nothing to keep in sync. CI
-pins the binary to the version that file was written against; if your local
-version is newer and reports something CI does not, that is worth an issue
-rather than a silent `//nolint`.
+its own, so there is nothing to configure. It is worth a run before any PR
+that touches error handling, file paths, or anything that writes to disk —
+`gosec` in that set is what caught an unescaped value going into the OAuth
+callback's HTML page, which no amount of `go vet` would have found.
 
 Every `//nolint` in this repo carries a reason on the same line. Add yours the
 same way, or fix the finding. `go vet` and `gofmt` remain the floor: both are
