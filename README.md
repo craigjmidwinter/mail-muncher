@@ -319,6 +319,42 @@ tar xzf "mail-muncher_${VERSION}_${OS}_${ARCH}.tar.gz" mail-muncher
 sudo install -m 0755 mail-muncher /usr/local/bin/mail-muncher
 ```
 
+If the binary then refuses to run at all —
+
+```
+bash: mail-muncher: cannot execute binary file: Exec format error
+```
+
+— you have an archive for the wrong architecture. That message comes from the
+kernel and says nothing about mail-muncher, so it is worth knowing the shape of
+it. Compare `uname -m` against the `_amd64` / `_arm64` in the filename you
+downloaded; the `ARCH=` line above computes the right one for you, so this only
+bites if you set the name by hand.
+
+**No root?** `/usr/local/bin` needs it; `~/.local/bin` does not. Drop the
+`sudo` and install there instead — nothing about mail-muncher wants a
+system-wide location:
+
+```bash
+install -d ~/.local/bin
+install -m 0755 mail-muncher ~/.local/bin/mail-muncher
+```
+
+If `mail-muncher` is then "command not found", `~/.local/bin` is not on your
+`PATH`; add it in your shell profile.
+
+Skipping the `sudo` without changing the destination fails with a `Permission
+denied` from `install` itself — on macOS naming a scratch file rather than
+`mail-muncher`, which is confusing the first time you see it:
+
+```
+install: /usr/local/bin/INS@LPh1Hz: Permission denied     # macOS
+install: cannot create regular file '/usr/local/bin/mail-muncher': Permission denied   # GNU
+```
+
+Either message means the same thing: pick the `~/.local/bin` route above, or
+put the `sudo` back.
+
 On macOS, a binary you downloaded yourself is quarantined by Gatekeeper. Clear
 it with `xattr -d com.apple.quarantine /usr/local/bin/mail-muncher`, or use the
 Homebrew install above, which does this for you.
@@ -343,6 +379,13 @@ is no public key to fetch and no private key anyone has to guard. The
 signing certificate is issued to the release workflow's own GitHub OIDC
 identity and recorded in the public Rekor transparency log, so what you are
 checking is "this was built by `release.yml` in this repo, from a tag":
+
+`cosign` is not installed by default on any platform and is not in the usual
+distro repositories, so `cosign: command not found` here means "not installed
+yet", not "verification failed". Get it first — `brew install cosign`, or
+`go install github.com/sigstore/cosign/v2/cmd/cosign@latest`, or a release
+binary from [the install
+docs](https://docs.sigstore.dev/cosign/system_config/installation/).
 
 ```bash
 curl -fsSLO "https://github.com/craigjmidwinter/mail-muncher/releases/download/v${VERSION}/checksums.txt.sig"
@@ -407,12 +450,20 @@ host those are a cron line and a launchd/systemd unit, which fit better.
 Two mounts, and both matter:
 
 ```bash
+# -e IMAP_PASSWORD forwards the variable, it does not invent it: export it
+# first, from wherever you actually keep the secret.
+export IMAP_PASSWORD="$(security find-generic-password -s mail-muncher -w)"
+
 docker run -i --rm \
   -e IMAP_PASSWORD \
   -v ~/.config/mail-muncher:/home/muncher/.config/mail-muncher:ro \
   -v ~/.local/share/mail-muncher:/home/muncher/archive \
   ghcr.io/craigjmidwinter/mail-muncher:latest mcp
 ```
+
+That `export` pairs with `password_cmd: printenv IMAP_PASSWORD` in the config —
+see the note below on why your host password manager is not reachable from
+inside the container.
 
 **Every path inside `config.yml` has to be a path the container can see.** A
 `dest:` of `~/Mail/receipts` resolves against the container's home directory,
@@ -460,6 +511,89 @@ below.
 The skill leads with `provider: imap` and drives `mail-muncher init`, so it
 takes the same two-minute route this README does rather than sending you to the
 Google Cloud Console.
+
+### Windows
+
+There is no Windows build, and none of the options above quietly work around
+that. Homebrew does not run on Windows. The release archives are `darwin` and
+`linux` only, and the download snippet above is a POSIX shell script built on
+`uname`, which PowerShell and `cmd` cannot run at all.
+
+`go install` is the one path that produces something, and that is the problem
+worth stating plainly. Go cross-compiles this module cleanly — no cgo, no
+platform build tags outside a test file — so you get a `mail-muncher.exe` that
+starts, and `mail-muncher init` that writes a config without complaint. It
+stops at the first `run`. The IMAP provider, the ~2 min path this README leads
+with, executes `imap.password_cmd` by handing it to `/bin/sh -c`
+([`internal/provider/imap/password.go`](internal/provider/imap/password.go)),
+and a stock Windows machine has no `/bin/sh`. `init` is careful enough not to
+seed a Windows config with a macOS or Linux secret tool, but the command it
+does seed still goes to a shell that is not there, so the failure arrives late
+and blames the wrong thing.
+
+The Gmail provider has no such dependency — its OAuth flow already picks
+`rundll32` on Windows — so it may work end to end. It is untested there and
+unsupported.
+
+What does work on Windows: the [container image](#container-image) under
+Docker Desktop, or either install path inside WSL2, where a Linux binary and
+`/bin/sh` both exist.
+
+### Upgrade
+
+```bash
+brew upgrade mail-muncher            # Homebrew
+go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest
+```
+
+For a downloaded binary, repeat the download steps above — the `install` step
+overwrites in place. Nothing else has to change: the config schema and the
+on-disk layout are stable within 0.x, and sync cursors in `state_dir` are read
+by any newer version. [CHANGELOG.md](CHANGELOG.md) records anything that would
+make that untrue, and there is nothing there yet.
+
+Check what you landed on with `mail-muncher --version`. A build without `make`
+reports `dev` — that is the `go install` version-stamp gotcha, not a broken
+install.
+
+### Uninstall
+
+Removing the binary leaves everything else behind, so this is in the order
+that removes the most sensitive material first. Nothing here is done for you:
+
+```bash
+# 1. Stop it, if you scheduled it.
+launchctl unload ~/Library/LaunchAgents/com.craigjmidwinter.mail-muncher.plist
+rm ~/Library/LaunchAgents/com.craigjmidwinter.mail-muncher.plist
+rm -f ~/Library/Logs/mail-muncher.out.log ~/Library/Logs/mail-muncher.err.log
+# or, if you used cron: crontab -e and delete the line.
+
+# 2. The credential. This is the part nothing else will clean up.
+security delete-generic-password -s mail-muncher      # macOS Keychain, IMAP
+# Gmail instead: revoke the app at https://myaccount.google.com/permissions
+
+# 3. Config, credentials and the OAuth token.
+rm -rf ~/.config/mail-muncher
+
+# 4. Sync cursors, both lockfiles, and the quarantine directory.
+rm -rf ~/.local/state/mail-muncher
+
+# 5. The binary.
+brew uninstall mail-muncher          # Homebrew
+rm -f /usr/local/bin/mail-muncher    # downloaded binary
+rm -f "$(go env GOPATH)/bin/mail-muncher"   # go install
+```
+
+**Your archived mail is deliberately not on that list.** It lives at whatever
+`dest` your rules named — `~/Mail/mail-muncher` if you took the `init` default
+— and those are ordinary files that outlive the tool, which is the whole point
+of the format. `grep -n 'dest:' ~/.config/mail-muncher/config.yml` before step
+3 if you want the paths, and delete them yourself if you want the mail gone.
+
+The Homebrew cask carries no `zap` stanza, so `brew uninstall` removes the
+binary and nothing under your home directory. That is on purpose — mail this
+tool has already written is yours, and an uninstaller is a bad place to
+discover otherwise.
 
 ## Quickstart
 
@@ -524,43 +658,67 @@ mail-muncher init --provider imap
 ```
 Account name [personal]:
 Write matched mail to [~/Mail/mail-muncher]:
+IMAP host: imap.fastmail.com
+IMAP username: you@fastmail.com
+Password command [security find-generic-password -s mail-muncher -w]:
 Wrote /Users/you/.config/mail-muncher/config.yml
 
 Next, for provider imap:
-  1. Edit imap.host, imap.username and imap.password_cmd in:
-       /Users/you/.config/mail-muncher/config.yml
-     Create an app password with your mail provider and store it where
-     password_cmd can read it.
-  2. Run that same password_cmd in a shell and check it prints the password
-     and nothing else, for example:
+  1. Run that password_cmd in a shell and check it prints the password and
+     nothing else, for example:
        security find-generic-password -s mail-muncher -w | cat -A
      Anything else on stdout - a prompt, a warning, a trailing blank line -
-     becomes part of the password and the login fails.
-  3. mail-muncher validate
-  4. mail-muncher run --dry-run     then     mail-muncher run
+     becomes part of the password and the login fails. If it is not there
+     yet, create an app password with your mail provider first and store it
+     where password_cmd can read it.
+  2. mail-muncher validate
+  3. mail-muncher run --dry-run     then     mail-muncher run
 Matched mail lands in ~/Mail/mail-muncher
 Docs: https://craigjmidwinter.github.io/mail-muncher/
 ```
 
-`init` is interactive by default and asks three questions — provider, account
-name, destination. Add `--account NAME` and `--dest DIR` to answer them up
-front, or `--yes` to take every default. `--yes` still requires `--provider`:
-the two paths cost different things, so there is no honest default to pick on
-your behalf. An existing config is never overwritten without `--force`.
+**There is no editing step.** `init` asks for everything the IMAP path needs
+and writes a config that validates on the first try. The password command is
+offered with your platform's default already filled in — Keychain on macOS,
+`secret-tool` on Linux, `pass` elsewhere — so pressing Enter through it is a
+real answer, not a placeholder.
 
-The whole thing scripts, which is what an installing agent wants:
+Every question has a flag, for answering up front or scripting the whole
+thing:
 
 ```bash
-mail-muncher init --provider imap --yes
+mail-muncher init --provider imap --yes \
+  --host imap.fastmail.com --username you@fastmail.com
 ```
+
+`--yes` takes the default for everything that has an honest one, which is why
+it still requires `--provider`, `--host` and `--username`. Those three have no
+default worth guessing, and it says so rather than writing a placeholder:
+
+```
+error: --host and --username required with --yes --provider imap; host and
+username have no honest default to take. Run `mail-muncher init --provider
+imap` without --yes to be prompted instead
+```
+
+Add `--account NAME`, `--dest DIR` and `--password-cmd CMD` to answer the rest.
+An existing config is never overwritten without `--force`.
 
 `~/.config/mail-muncher/config.yml` is the default path; `--config` overrides
 it everywhere, including for `init`.
 
-**3. Fill in three values.** Open the file `init` just wrote and set
-`imap.host`, `imap.username` and `imap.password_cmd`. It is commented
-throughout, and [`examples/imap.yml`](examples/imap.yml) is a fuller worked
-version:
+**3. Check the password command prints the password, and nothing else.**
+
+```bash
+security find-generic-password -s mail-muncher -w | cat -A
+```
+
+`| cat -A` makes a stray prompt, warning, or trailing blank line visible.
+Anything extra on stdout becomes part of the password and the login fails —
+this is the single most common reason a first run cannot authenticate.
+
+Here is what `init` wrote, for reference; it is commented throughout, and
+[`examples/imap.yml`](examples/imap.yml) is a fuller worked version:
 
 ```yaml
 accounts:
@@ -572,10 +730,6 @@ accounts:
       password_cmd: security find-generic-password -s mail-muncher -w
       mailboxes: [INBOX]
 ```
-
-Run that `password_cmd` in a shell first and check it prints the password and
-nothing else — `| cat -A` makes a stray prompt or trailing blank line visible.
-Anything extra on stdout becomes part of the password and the login fails.
 
 **4. Check the config.**
 
@@ -1186,6 +1340,8 @@ as a message.
 
 If your consumer runs mail-muncher itself, `run --json` is better still: it
 lists exactly the paths this cycle wrote, so it cannot be confused by anything
+dest=~/Mail/job-search                                      # the rule's dest
+
 sitting in the tree.
 
 Message bodies are attacker-controlled text. Filtered is not vetted. Treat body
@@ -1229,7 +1385,10 @@ Per-command flags:
 | `init` | `--provider` | — | `imap` or `gmail`. Prompted for when omitted; **required with `--yes`**, because the two paths cost different things and there is no honest default. |
 | `init` | `--account` | `personal` | Name for the account the config creates. |
 | `init` | `--dest` | `~/Mail/mail-muncher` | Where the starter rule writes matched mail. |
-| `init` | `--yes` | `false` | Never prompt; take the default for every answer except `--provider`. |
+| `init` | `--host` | — | IMAP server hostname, e.g. `imap.fastmail.com`. Prompted for when omitted; **required with `--yes`** on the IMAP path. |
+| `init` | `--username` | — | IMAP username, usually the full address. Prompted for when omitted; **required with `--yes`** on the IMAP path. |
+| `init` | `--password-cmd` | platform default | Shell command that prints the app password on stdout. Defaults to Keychain on macOS, `secret-tool` on Linux, `pass` elsewhere. |
+| `init` | `--yes` | `false` | Never prompt; take the default for every answer that has an honest one. Still requires `--provider`, and on IMAP `--host` and `--username`. |
 | `init` | `--force` | `false` | Overwrite an existing config. Without it, `init` refuses and exits 1 rather than clobbering somebody's rules and credential paths. |
 | `run` | `--dry-run` | `false` | Fetch and evaluate, report what would be written, write nothing and save no state. |
 | `run` | `--json` | `false` | Write a machine-readable manifest to stdout, one JSON object per account. |
@@ -1442,11 +1601,14 @@ A fuller sample with the environment cron does not give you is in
 
 **launchd (macOS)** — run the daemon under `launchd` so it survives logout and
 restarts on failure. A ready-to-edit plist lives in
-[`contrib/launchd/`](contrib/launchd/); copy it into
-`~/Library/LaunchAgents/`, edit the paths to the binary and config, then:
+[`contrib/launchd/`](contrib/launchd/). Copy it in, edit the four absolute
+paths inside the copy — `launchd` expands neither `~` nor `$HOME` — then load
+it:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/<the-plist-you-copied>
+cp contrib/launchd/com.craigjmidwinter.mail-muncher.plist ~/Library/LaunchAgents/
+# edit the four paths in the copy, then:
+launchctl load ~/Library/LaunchAgents/com.craigjmidwinter.mail-muncher.plist
 ```
 
 **systemd** — no unit ships yet; `mail-muncher daemon --interval 5m` is a
@@ -1461,6 +1623,9 @@ is the thing that does not happen by default.
 
 Set it wide for the first run. The key exists on both providers, under whichever
 block your account uses:
+
+To stop it, `launchctl unload` the same path. Removing it for good means
+deleting that file too — see [Uninstall](#uninstall).
 
 ```yaml
 accounts:

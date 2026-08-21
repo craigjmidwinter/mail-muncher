@@ -92,6 +92,11 @@ func newInitCommand() *cobra.Command {
 			"Interactive by default; fully non-interactive when --provider, --account\n" +
 			"and --dest are given (or with --yes, which takes the default for every\n" +
 			"answer except --provider).\n\n" +
+			"With --provider imap, init also asks for --host, --username and\n" +
+			"--password-cmd, so the config it writes never needs opening in an editor.\n" +
+			"--host and --username have no honest default, so --yes requires them;\n" +
+			"--password-cmd defaults to the right secret-manager command for this\n" +
+			"platform and can be left out.\n\n" +
 			"An existing config is never overwritten: init prints its path and exits 1.\n" +
 			"Only --force overwrites.\n\n" +
 			"The generated config carries one starter rule matching everything newer\n" +
@@ -116,7 +121,11 @@ func newInitCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "provider to configure: "+strings.Join(initProviders, " or "))
 	cmd.Flags().StringVar(&opts.account, "account", "", "name for the account (default "+defaultInitAccount+")")
 	cmd.Flags().StringVar(&opts.dest, "dest", "", "directory matched mail is written to (default "+defaultInitDest+")")
-	cmd.Flags().BoolVar(&opts.assumeYes, "yes", false, "never prompt; take the default for every answer except --provider")
+	cmd.Flags().StringVar(&opts.host, "host", "", "IMAP server hostname, e.g. imap.fastmail.com (imap provider only, no default)")
+	cmd.Flags().StringVar(&opts.username, "username", "", "IMAP username, usually the full address (imap provider only, no default)")
+	cmd.Flags().StringVar(&opts.passwordCmd, "password-cmd", "",
+		"shell command that prints the IMAP app password on stdout (imap provider only; default "+defaultPasswordCmd(runtime.GOOS)+" on this machine)")
+	cmd.Flags().BoolVar(&opts.assumeYes, "yes", false, "never prompt; take the default for every answer except --provider, --host and --username")
 	cmd.Flags().BoolVar(&opts.force, "force", false, "overwrite an existing config file")
 
 	return cmd
@@ -125,12 +134,15 @@ func newInitCommand() *cobra.Command {
 // initOptions are the answers `init` needs, whether they arrived as flags or
 // as replies to a prompt.
 type initOptions struct {
-	configPath string
-	provider   string
-	account    string
-	dest       string
-	assumeYes  bool
-	force      bool
+	configPath  string
+	provider    string
+	account     string
+	dest        string
+	host        string
+	username    string
+	passwordCmd string
+	assumeYes   bool
+	force       bool
 }
 
 // runInit is the whole command: refuse to clobber, collect the answers, render
@@ -211,7 +223,7 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 	}
 	if o.provider == "" {
 		_, _ = fmt.Fprintln(out, providerChoiceText())
-		answer, err := prompt(r, out, "Provider ("+strings.Join(initProviders, "/")+")", "")
+		answer, err := prompt(r, out, "Provider ("+strings.Join(initProviders, "/")+")", "", "--provider")
 		if err != nil {
 			return err
 		}
@@ -234,7 +246,7 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 	}
 
 	if o.account == "" && !o.assumeYes {
-		answer, err := prompt(r, out, "Account name", defaultInitAccount)
+		answer, err := prompt(r, out, "Account name", defaultInitAccount, "--account")
 		if err != nil {
 			return err
 		}
@@ -245,7 +257,7 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 	}
 
 	if o.dest == "" && !o.assumeYes {
-		answer, err := prompt(r, out, "Write matched mail to", defaultInitDest)
+		answer, err := prompt(r, out, "Write matched mail to", defaultInitDest, "--dest")
 		if err != nil {
 			return err
 		}
@@ -257,13 +269,89 @@ func (o *initOptions) resolve(in io.Reader, out io.Writer) error {
 
 	o.account = strings.TrimSpace(o.account)
 	o.dest = strings.TrimSpace(o.dest)
+
+	if o.provider == "imap" {
+		if err := o.resolveImapFields(r, out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resolveImapFields fills in host, username and password_cmd — the three
+// values the old guidance told people to open an editor for. It asks them the
+// same way account and dest are asked, with one difference: host and username
+// have no honest default (there is no value that is right more often than it
+// is wrong), so unlike account and dest, --yes does not silently take one for
+// them. Instead --yes without --host/--username fails, naming the flags to
+// pass, exactly as it already does for a missing --provider — the two paths
+// cost different things.
+//
+// password_cmd is different again: defaultPasswordCmd names a real command
+// for the platform init is running on, so it is defaulted the same way
+// account and dest are, under --yes or a bare Enter.
+//
+// The payoff is that renderConfig never again writes a placeholder: every
+// imap config init produces validates *and* is ready to run, so nothing
+// printed afterward needs to say "edit this file first".
+func (o *initOptions) resolveImapFields(r *bufio.Reader, out io.Writer) error {
+	var missing []string
+
+	if o.host == "" {
+		if o.assumeYes {
+			missing = append(missing, "--host")
+		} else {
+			answer, err := prompt(r, out, "IMAP host", "", "--host")
+			if err != nil {
+				return err
+			}
+			o.host = answer
+		}
+	}
+	if o.username == "" {
+		if o.assumeYes {
+			missing = append(missing, "--username")
+		} else {
+			answer, err := prompt(r, out, "IMAP username", "", "--username")
+			if err != nil {
+				return err
+			}
+			o.username = answer
+		}
+	}
+	if len(missing) > 0 {
+		return &pipeline.ExitCodeError{
+			Code: pipeline.ExitConfig,
+			Err: fmt.Errorf("%s required with --yes --provider imap; host and username have no honest "+
+				"default to take. Run `mail-muncher init --provider imap` without --yes to be prompted "+
+				"instead", strings.Join(missing, " and ")),
+		}
+	}
+
+	if o.passwordCmd == "" {
+		if o.assumeYes {
+			o.passwordCmd = defaultPasswordCmd(runtime.GOOS)
+		} else {
+			answer, err := prompt(r, out, "Password command", defaultPasswordCmd(runtime.GOOS), "--password-cmd")
+			if err != nil {
+				return err
+			}
+			o.passwordCmd = answer
+		}
+	}
+
+	o.host = strings.TrimSpace(o.host)
+	o.username = strings.TrimSpace(o.username)
+	o.passwordCmd = strings.TrimSpace(o.passwordCmd)
 	return nil
 }
 
 // prompt asks one question and returns the answer, or def when the answer is
 // blank. A closed stdin is not an error: it means nobody is there to answer, so
-// the default stands.
-func prompt(r *bufio.Reader, out io.Writer, question, def string) (string, error) {
+// the default stands. flagHint names the flag that answers this question
+// without a prompt; it is only used in the error a closed stdin produces when
+// there is no default to fall back on.
+func prompt(r *bufio.Reader, out io.Writer, question, def, flagHint string) (string, error) {
 	// Best-effort: out is the terminal (or a captured buffer in tests); a
 	// failed prompt write is not worth failing an interactive init over.
 	if def == "" {
@@ -277,8 +365,8 @@ func prompt(r *bufio.Reader, out io.Writer, question, def string) (string, error
 		if def == "" {
 			return "", &pipeline.ExitCodeError{
 				Code: pipeline.ExitConfig,
-				Err: fmt.Errorf("%s: no answer and no default; pass --provider, --account and --dest "+
-					"to run non-interactively", question),
+				Err: fmt.Errorf("%s: no answer and no default; pass %s to run non-interactively",
+					question, flagHint),
 			}
 		}
 		_, _ = fmt.Fprintln(out)
@@ -346,7 +434,9 @@ func renderConfig(opts *initOptions) (string, error) {
 			opts.dest,
 			starterRuleAge,
 			docsURL,
-			defaultPasswordCmd(runtime.GOOS),
+			opts.host,
+			opts.username,
+			opts.passwordCmd,
 		), nil
 	}
 	return "", fmt.Errorf("unknown provider %q", opts.provider)
@@ -465,20 +555,21 @@ Docs: %s`,
 			filepath.Join(dir, "credentials.json"), opts.account, opts.dest, docsURL)
 	}
 
+	// No "edit this file" step: resolve() already collected host, username and
+	// password_cmd, so the file nextSteps is describing is already complete.
+	// The only thing left to prove is that password_cmd actually works.
 	return fmt.Sprintf(`Next, for provider imap:
-  1. Edit imap.host, imap.username and imap.password_cmd in:
-       %s
-     Create an app password with your mail provider and store it where
-     password_cmd can read it.
-  2. Run that same password_cmd in a shell and check it prints the password
-     and nothing else, for example:
+  1. Run that password_cmd in a shell and check it prints the password and
+     nothing else, for example:
        %s | cat -A
      Anything else on stdout - a prompt, a warning, a trailing blank line -
-     becomes part of the password and the login fails.
-  3. mail-muncher validate
-  4. mail-muncher run --dry-run     then     mail-muncher run
+     becomes part of the password and the login fails. If it is not there
+     yet, create an app password with your mail provider first and store it
+     where password_cmd can read it.
+  2. mail-muncher validate
+  3. mail-muncher run --dry-run     then     mail-muncher run
 Matched mail lands in %s
-Docs: %s`, opts.configPath, defaultPasswordCmd(runtime.GOOS), opts.dest, docsURL)
+Docs: %s`, opts.passwordCmd, opts.dest, docsURL)
 }
 
 // sortedProviders is used by tests to iterate every branch this command can
@@ -538,17 +629,18 @@ accounts:
   - name: %[1]s
     provider: imap
     imap:
-      # Your provider's IMAP endpoint and your address. Examples:
+      # Your provider's IMAP endpoint and your address. For reference, other
+      # providers use:
       #   Gmail     imap.gmail.com
       #   Fastmail  imap.fastmail.com
       #   Proton    127.0.0.1 via Proton Mail Bridge (port 1143, tls: false)
-      host: imap.example.com
+      host: %[5]s
       port: 993
       tls: true
-      username: you@example.com
+      username: %[6]s
       # Never a plaintext password. This command is run to fetch the app
-      # password and must print it and nothing else. The line below is the one
-      # for the platform that wrote this file; swap in whichever you use:
+      # password and must print it and nothing else. It is the one you gave
+      # "mail-muncher init"; swap it for a different secret manager any time:
       #   macOS   ` + keychainPasswordCmd + `
       #   Linux   ` + secretToolPasswordCmd + `
       #   pass    ` + passPasswordCmd + `
@@ -560,7 +652,7 @@ accounts:
       # OAuth token. mail-muncher only ever issues BODY.PEEK and never sets the
       # \Seen flag, but that restraint is in this program rather than enforced
       # by your provider.
-      password_cmd: %[5]s
+      password_cmd: %[7]s
       mailboxes: [INBOX]
 
 rules:

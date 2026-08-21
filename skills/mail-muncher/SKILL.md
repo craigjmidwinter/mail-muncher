@@ -31,17 +31,24 @@ password.
 
 ```bash
 go install github.com/craigjmidwinter/mail-muncher/cmd/mail-muncher@latest  # needs Go 1.25+
-mail-muncher init --provider imap --account personal --yes                  # writes ~/.config/mail-muncher/config.yml, 0600
-#   then edit three keys: imap.host, imap.username, imap.password_cmd
+mail-muncher init --provider imap --account personal --yes \
+  --host imap.fastmail.com --username you@fastmail.com                      # writes ~/.config/mail-muncher/config.yml, 0600
 mail-muncher validate                                                       # prints OK, zero warnings when it is right
 mail-muncher run --dry-run                                                  # evaluate, write nothing
 mail-muncher run                                                            # for real
 ```
 
+**No editing step.** `init` writes a config that validates as-is; there is no
+"now open the file" stage to script around.
+
 `init` is interactive by default and fully non-interactive with flags:
-`init [--provider imap|gmail] [--account NAME] [--dest DIR] [--yes] [--force]`.
-`--yes` takes the default for every answer **except `--provider`**, which has
-none — it exits 1 asking for one. It refuses to overwrite an existing config
+`init [--provider imap|gmail] [--account NAME] [--dest DIR] [--host HOST]
+[--username USER] [--password-cmd CMD] [--yes] [--force]`.
+`--yes` takes the default for every answer that has an honest one, so it still
+requires `--provider`, plus `--host` and `--username` on the IMAP path — it
+exits 1 naming exactly which are missing. `--password-cmd` defaults per
+platform (Keychain on macOS, `secret-tool` on Linux, `pass` elsewhere). It
+refuses to overwrite an existing config
 (exit 1) unless `--force`. The file it writes is run through the real loader and
 the real validator *before* it is written, so a config `init` produced always
 passes `validate`. It carries one starter rule, `newer_than: 72h` into

@@ -160,6 +160,61 @@ warning: rules: no rules configured; no messages will be archived
 A config with no rules is valid and does nothing useful — it fetches, evaluates
 nothing, and stores nothing.
 
+## Failure policies
+
+Two top-level keys decide what happens when a cycle goes wrong, and a third
+says where the wreckage is parked. The defaults are the safe choices; change
+them only once you have decided which failure you would rather have.
+
+```yaml
+on_message_failure: quarantine                        # or: abort
+on_degraded_filter: hold                              # or: fail, proceed
+quarantine_dir: ~/.local/state/mail-muncher/quarantine
+```
+
+### `on_message_failure`
+
+- **Type:** enum — `quarantine`, `abort`
+- **Default:** `quarantine`
+- **Applies to:** a message that will not parse, or where every rendering its
+  rule asked for failed to write.
+
+| Value | Behavior |
+| --- | --- |
+| `quarantine` (default) | Write the raw bytes to `<quarantine_dir>/<account>/<id>.eml` with a `.json` sidecar naming the failure, then let the cursor advance. Nothing is lost, and one poison message cannot wedge the pipeline. Counted as `quarantined` in the summary and manifest; the run still exits 0. |
+| `abort` | Return the failure, so the cursor does **not** advance and the message is re-fetched next cycle. A permanently unparseable message then wedges the account until a human deals with it. |
+
+A quarantine write that itself fails falls back to `abort` semantics for that
+message — refusing to advance is recoverable, losing the message is not.
+
+### `on_degraded_filter`
+
+- **Type:** enum — `hold`, `fail`, `proceed`
+- **Default:** `hold`
+- **Applies to:** a rule whose `from_domains_file` or `from_regex_file` is
+  missing, unreadable, truncated partway through, or contains refused lines.
+  Such a file matches nothing, or less than it was meant to, so without a
+  policy every message that cycle is evaluated against a list that is not the
+  one on disk, found not to match, and consumed.
+
+| Value | Behavior |
+| --- | --- |
+| `hold` (default) | Run the cycle and store what did match, log the degradation at error level, but do **not** save the advanced cursor — so the same mail is re-evaluated once the file returns. The manifest reports `degraded` and `state_held`. Exit 0. |
+| `fail` | End the cycle before anything is fetched. Nothing stored, nothing advanced, non-zero exit. |
+| `proceed` | Treat an unreadable list as an empty one and advance anyway. The only option that accepts silent loss of wanted mail — `validate` warns about it. |
+
+Files already stored under `hold` stay stored: the sinks are idempotent, so the
+re-run skips them.
+
+### `quarantine_dir`
+
+- **Type:** path
+- **Default:** `<state_dir>/quarantine`
+
+Where `on_message_failure: quarantine` parks messages, one subdirectory per
+account. This is the one part of `state_dir` that is not safe to delete
+casually — it holds the only copy of anything that could not be delivered.
+
 ## `accounts`
 
 ### `accounts[].name`

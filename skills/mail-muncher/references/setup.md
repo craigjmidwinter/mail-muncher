@@ -63,16 +63,18 @@ then prints the exact next commands for the provider chosen.
 
 ## 4a. The IMAP path (~2 minutes)
 
-1. `mail-muncher init --provider imap --account personal --yes`
-2. Create an **app password** in the mail provider's settings and store it where
+1. Create an **app password** in the mail provider's settings and store it where
    a command can retrieve it (`pass`, `security`, `op`, `secret-tool`, `gpg`).
-3. Edit three keys in the generated config: `imap.host`, `imap.username`,
-   `imap.password_cmd`. Everything else has a default.
-4. Run the `password_cmd` in a shell and confirm it prints the password **and
+2. `mail-muncher init --provider imap --account personal --yes --host HOST
+   --username USER` — add `--password-cmd CMD` if the platform default is not
+   the store you used. This writes a config that is complete: there is no
+   editing step, and `--yes` exits 1 naming any of `--provider`/`--host`/
+   `--username` you left out rather than writing a placeholder.
+3. Run the `password_cmd` in a shell and confirm it prints the password **and
    nothing else** — `... | cat -A`. A prompt, a warning, or a trailing blank
    line becomes part of the password and the login fails.
-5. `mail-muncher validate` → `OK`, with no warnings.
-6. `mail-muncher run --dry-run`, then `mail-muncher run`.
+4. `mail-muncher validate` → `OK`, with no warnings.
+5. `mail-muncher run --dry-run`, then `mail-muncher run`.
 
 There is no `auth` step, and `mail-muncher auth` on an IMAP account fails:
 

@@ -40,12 +40,20 @@ func TestInitProducesAConfigThatValidates(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "mail-muncher", "config.yml")
 
-			stdout, _, err := runInitCLI(t, "",
+			args := []string{
 				"init", "--config", path,
 				"--provider", provider,
 				"--account", "personal",
 				"--dest", filepath.Join(t.TempDir(), "mail"),
-				"--yes")
+				"--yes",
+			}
+			if provider == "imap" {
+				// --yes takes no default for host and username, so a fully
+				// non-interactive imap run has to name them.
+				args = append(args, "--host", "imap.fastmail.com", "--username", "personal@fastmail.com")
+			}
+
+			stdout, _, err := runInitCLI(t, "", args...)
 
 			if err != nil {
 				// The imap provider may not exist in this build yet; if so, init
@@ -78,6 +86,11 @@ func TestInitStarterRuleIsTheSmokeTest(t *testing.T) {
 				provider:   provider,
 				account:    "personal",
 				dest:       "~/Mail/mail-muncher",
+			}
+			if provider == "imap" {
+				opts.host = "imap.example.org"
+				opts.username = "personal@example.org"
+				opts.passwordCmd = defaultPasswordCmd(runtime.GOOS)
 			}
 			body, err := renderConfig(opts)
 			require.NoError(t, err)
@@ -129,10 +142,13 @@ func TestDefaultPasswordCmdIsPlatformAware(t *testing.T) {
 // file is self-explanatory when it is copied to a different machine.
 func TestInitPasswordCmdDefaultAndAlternatives(t *testing.T) {
 	opts := &initOptions{
-		configPath: filepath.Join(t.TempDir(), "config.yml"),
-		provider:   "imap",
-		account:    defaultInitAccount,
-		dest:       defaultInitDest,
+		configPath:  filepath.Join(t.TempDir(), "config.yml"),
+		provider:    "imap",
+		account:     defaultInitAccount,
+		dest:        defaultInitDest,
+		host:        "imap.fastmail.com",
+		username:    "you@fastmail.com",
+		passwordCmd: defaultPasswordCmd(runtime.GOOS),
 	}
 	body, err := renderConfig(opts)
 	require.NoError(t, err)
@@ -156,7 +172,7 @@ func TestInitPasswordCmdDefaultAndAlternatives(t *testing.T) {
 	// this one's — which is the part a darwin machine cannot otherwise prove.
 	for _, goos := range []string{"darwin", "linux", "windows"} {
 		body := fmt.Sprintf(imapConfigTemplate,
-			opts.account, opts.dest, starterRuleAge, docsURL, defaultPasswordCmd(goos))
+			opts.account, opts.dest, starterRuleAge, docsURL, opts.host, opts.username, defaultPasswordCmd(goos))
 		require.Contains(t, body, "password_cmd: "+defaultPasswordCmd(goos))
 		require.NoErrorf(t, validateGenerated(body, "imap"),
 			"the config init writes on %s must pass validate:\n%s", goos, body)
@@ -311,12 +327,127 @@ func TestInitNextStepsAreProviderSpecific(t *testing.T) {
 				account:    defaultInitAccount,
 				dest:       defaultInitDest,
 			}
+			if provider == "imap" {
+				opts.host = "imap.fastmail.com"
+				opts.username = "you@fastmail.com"
+				opts.passwordCmd = defaultPasswordCmd(runtime.GOOS)
+			}
 			got := nextSteps(opts)
 			for _, w := range want {
 				require.Contains(t, got, w)
 			}
 		})
 	}
+}
+
+// TestInitWithImapValuesNeedsNoEditor: host, username and password_cmd
+// supplied on the command line produce a config with no placeholders and
+// next-steps guidance with no "edit this file" step — the fix for the
+// ergonomics violation on mail-muncher's primary onboarding path.
+func TestInitWithImapValuesNeedsNoEditor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+	dest := filepath.Join(dir, "archive")
+
+	stdout, _, err := runInitCLI(t, "",
+		"init", "--config", path,
+		"--provider", "imap",
+		"--account", "personal",
+		"--dest", dest,
+		"--host", "imap.fastmail.com",
+		"--username", "you@fastmail.com",
+		"--password-cmd", "security find-generic-password -s mail-muncher -w",
+	)
+	require.NoError(t, err)
+	require.NotContains(t, stdout, "IMAP host", "a flag-complete imap invocation must not prompt")
+
+	body := readFileForTest(t, path)
+	require.Contains(t, body, "host: imap.fastmail.com")
+	require.Contains(t, body, "username: you@fastmail.com")
+	require.Contains(t, body, "password_cmd: security find-generic-password -s mail-muncher -w")
+	require.NotContains(t, body, "imap.example.com", "no placeholder host must survive into the file")
+	require.NotContains(t, body, "you@example.com", "no placeholder username must survive into the file")
+
+	require.NotContains(t, stdout, "Edit imap.host",
+		"the values were supplied, so there is nothing left to edit")
+	require.Contains(t, stdout, "security find-generic-password -s mail-muncher -w | cat -A")
+	require.Contains(t, stdout, "mail-muncher validate")
+	require.Contains(t, stdout, "mail-muncher run --dry-run")
+
+	// And the file this produced is exactly as usable as the generic
+	// acceptance test already proves for --yes: real values, not placeholders,
+	// pass validate too.
+	out, err := execute(t, "validate", "--config", path)
+	require.NoError(t, err)
+	require.Contains(t, out, "1 account(s), 1 rule(s)")
+}
+
+// TestInitInteractivePromptsForImapConnectionDetails: with no flags, an
+// interactive imap run asks for host, username and password_cmd the same way
+// it already asks for account and dest — host and username with no default,
+// password_cmd with the platform one, and a bare return on password_cmd takes
+// that default.
+func TestInitInteractivePromptsForImapConnectionDetails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yml")
+
+	stdin := "imap\nwork\n\nimap.fastmail.com\nyou@fastmail.com\n\n"
+	stdout, _, err := runInitCLI(t, stdin, "init", "--config", path)
+	require.NoError(t, err)
+
+	require.Contains(t, stdout, "IMAP host: ")
+	require.Contains(t, stdout, "IMAP username: ")
+	require.Contains(t, stdout, "Password command ["+defaultPasswordCmd(runtime.GOOS)+"]: ")
+
+	body := readFileForTest(t, path)
+	require.Contains(t, body, "host: imap.fastmail.com")
+	require.Contains(t, body, "username: you@fastmail.com")
+	require.Contains(t, body, "password_cmd: "+defaultPasswordCmd(runtime.GOOS),
+		"a bare return on the password command takes the platform default")
+
+	require.NotContains(t, stdout, "Edit imap.host")
+}
+
+// TestInitYesRequiresHostAndUsernameForImap: --yes takes the platform default
+// for password_cmd, exactly as it already takes defaultInitAccount and
+// defaultInitDest, but host and username have no honest default — so, like a
+// missing --provider, init refuses rather than writing a config that would
+// still need manual editing.
+func TestInitYesRequiresHostAndUsernameForImap(t *testing.T) {
+	t.Run("neither supplied", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yml")
+
+		_, _, err := runInitCLI(t, "", "init", "--config", path, "--provider", "imap", "--yes")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--host")
+		require.Contains(t, err.Error(), "--username")
+		require.Contains(t, err.Error(), "required with --yes")
+		require.NoFileExists(t, path)
+	})
+
+	t.Run("only host supplied", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yml")
+
+		_, _, err := runInitCLI(t, "", "init", "--config", path, "--provider", "imap", "--yes",
+			"--host", "imap.fastmail.com")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "--username")
+		require.NotContains(t, err.Error(), "--host and", "host was already supplied")
+		require.NoFileExists(t, path)
+	})
+
+	t.Run("host and username supplied, password-cmd defaulted", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yml")
+
+		_, _, err := runInitCLI(t, "", "init", "--config", path, "--provider", "imap", "--yes",
+			"--host", "imap.fastmail.com", "--username", "you@fastmail.com")
+		require.NoError(t, err)
+
+		body := readFileForTest(t, path)
+		require.Contains(t, body, "host: imap.fastmail.com")
+		require.Contains(t, body, "username: you@fastmail.com")
+		require.Contains(t, body, "password_cmd: "+defaultPasswordCmd(runtime.GOOS))
+	})
 }
 
 // TestInitWritesPrivately: an imap config carries the command that retrieves a
@@ -339,7 +470,7 @@ func TestInitCommandIsRegistered(t *testing.T) {
 	root := newRootCommand()
 	cmd := findCommand(t, root, "init")
 
-	for _, name := range []string{"provider", "account", "dest", "yes", "force"} {
+	for _, name := range []string{"provider", "account", "dest", "host", "username", "password-cmd", "yes", "force"} {
 		require.NotNil(t, cmd.Flags().Lookup(name), "init must expose --"+name)
 	}
 	require.Nil(t, cmd.Flags().Lookup("config"), "init takes the persistent --config flag")

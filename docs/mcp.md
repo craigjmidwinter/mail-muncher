@@ -87,8 +87,12 @@ Check it starts before wiring it up — a config error is reported at startup,
 exit 1, rather than as a tool error buried in a transcript:
 
 ```bash
-mail-muncher validate --config /Users/you/.config/mail-muncher/config.yml
+mail-muncher validate
 ```
+
+That checks the default config path. Pass `--config` if yours lives elsewhere —
+the JSON above spells the path out in full because a client launches the server
+without a shell, so `~` would arrive uninterpreted.
 
 `--log-level debug` is safe to leave on. stdout carries protocol frames and
 nothing else; every log line goes to stderr, where the client collects it.

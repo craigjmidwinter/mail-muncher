@@ -163,8 +163,7 @@ About five minutes on the IMAP path, with no browser and no clone.
 
 ```bash
 mail-muncher run                       # not configured yet: prints what to do next
-mail-muncher init --provider imap      # writes a validated starter config
-# edit imap.host, imap.username and imap.password_cmd in the file it names
+mail-muncher init --provider imap      # asks for host, username and password command
 mail-muncher validate                  # parse, compile rules, resolve files
 mail-muncher run --dry-run             # connect and evaluate, write nothing
 mail-muncher run                       # for real
@@ -175,12 +174,17 @@ with no config it exits 1 and prints the path it looked at, the next command,
 and what each provider costs. Every command that needs a config does the same,
 so a broken install never looks like an unconfigured one.
 
-`init` asks three questions — provider, account name, destination — and takes
-`--account`, `--dest` and `--yes` to answer them up front. `--yes` still
-requires `--provider`, because the two paths cost different things and there is
-no honest default. An existing config is never overwritten without `--force`.
-The config it writes carries one starter rule matching everything newer than
-72h, so the first run is guaranteed to store something.
+`init` asks for everything the chosen provider needs — provider, account name,
+destination, and on IMAP the host, username and password command — and every
+question has a matching flag (`--account`, `--dest`, `--host`, `--username`,
+`--password-cmd`) for answering up front. `--yes` takes the default for
+everything that has an honest one, which is why it still requires `--provider`,
+and `--host` and `--username` on IMAP: those have no default worth guessing, so
+it says so rather than writing a placeholder you would have to go and edit. An
+existing config is never overwritten without `--force`. The config it writes
+carries one starter rule matching everything newer than 72h, so the first run
+is guaranteed to store something — and it validates on the first try, with no
+editing step.
 
 The secret never goes in the config: `password_cmd` is run and its stdout is
 the password, so it stays in whatever password manager you already use.

@@ -8,8 +8,9 @@ tags:
     - security
 summary: Gap check against the PROJECT-STANDARDS sections this repo predates
 type: task
-status: doing
+status: done
 effort: M
+entry: standards-pass-hygiene-katra-and-the-sweep
 ---
 
 Gap check against the fleet PROJECT-STANDARDS sections written after mail-muncher was set as an exemplar: PROJECT HYGIENE (tests, lint, deps, release discipline), KATRA practice, and the timeboxed PERFORMANCE & SECURITY SWEEP.

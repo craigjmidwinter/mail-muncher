@@ -20,8 +20,8 @@ to stdout. This page is the contract: an agent codes against these field names.
 - [`quarantined` entries](#quarantined-entries)
 - [`degraded_files` entries](#degraded_files-entries)
 - [`summary`](#summary)
+- [The human summary line](#the-human-summary-line)
 - [The daemon stream](#the-daemon-stream)
-- [Reading it with jq](#reading-it-with-jq)
 - [Exit status alongside the manifest](#exit-status-alongside-the-manifest)
 - [The same shape over MCP](#the-same-shape-over-mcp)
 
@@ -203,7 +203,7 @@ A non-zero `summary.quarantined` is not a failed run — the process still exits
 0 — but it is always mail a human has to look at. Alert on it.
 
 See [configuration.md](configuration.md#on_message_failure) for the policy and
-the on-disk layout.
+[`state_dir`](configuration.md#state_dir) for the on-disk layout.
 
 ## `degraded_files` entries
 
