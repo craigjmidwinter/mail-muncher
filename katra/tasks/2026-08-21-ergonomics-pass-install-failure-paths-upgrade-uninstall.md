@@ -8,9 +8,10 @@ tags:
     - docs
 summary: New PROJECT-STANDARDS section; Leg G performed as a stranger on darwin, linux and windows
 type: task
-status: doing
+status: done
 effort: M
 epic: adoption-and-onboarding
+entry: ergonomics-the-install-path-a-stranger-actually-walks
 ---
 
 PROJECT-STANDARDS gained an ERGONOMICS section (between PROJECT HYGIENE and KATRA) and a Leg G in PROCESS, after the 2026-08-20 pass had already run. This task is the catch-up.

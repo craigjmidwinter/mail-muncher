@@ -7,7 +7,14 @@ tags:
     - standards
     - docs
     - install
+hash: 4ab4cbd
+stat:
+    f: 14
+    a: 723
+    d: 92
 summary: Leg G found a manual-edit step on the primary path, a cp that never worked, and no uninstall at all
+closes:
+    - ergonomics-pass-install-failure-paths-upgrade-uninstall
 ---
 
 PROJECT-STANDARDS grew an ERGONOMICS section after this project had already
@@ -132,4 +139,3 @@ install, and the permission error. That second one corrected a draft of the
 docs — the message names a scratch file, `install: /usr/local/bin/INS@LPh1Hz:
 Permission denied`, not `mail-muncher`, which is confusing enough that quoting
 it wrongly would have been worse than not quoting it at all.
-
