@@ -1,5 +1,10 @@
 <p align="center">
   <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/mark-dark.svg">
+    <img src="docs/assets/brand/mark.svg" alt="The mail-muncher archive beast biting an envelope" width="220" height="220">
+  </picture>
+  <br>
+  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/lockup-dark.svg">
     <img src="docs/assets/brand/lockup.svg" alt="mail-muncher" width="408" height="64">
   </picture>
