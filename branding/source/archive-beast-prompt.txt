@@ -1,0 +1,37 @@
+Generator: OpenAI built-in image generation tool
+Generated: 2026-08-21
+Use case: logo-brand
+
+Create an original chunky grid critter eating an envelope. This is a new
+character called an archive beast: a squat four-footed creature with a low
+rectangular body made from crisp large pixel-grid blocks, an asymmetrical
+mail-slot jaw at the front, one alert square eye, two short uneven antenna
+nubs, and a cream envelope visibly halfway into the jaw. The pose should
+communicate a decisive chomp and forward motion.
+
+Render a polished hand-painted pixel-art raster with hard-edged chunky grid
+cells, a limited flat-colour palette, no gradients, and no texture. Center one
+full-body character in a square canvas, in three-quarter side profile facing
+right, with generous padding, all four feet visible, and the envelope
+projecting to the right. The mood is warm, precise, and mischievous rather
+than aggressive.
+
+Use warm brick red #E0533D for the body, dark brown #573923 for the outline,
+tan #D7B893 for secondary blocks, cream #EFDEC5 for the envelope and eye, and
+#17130F for the mouth. Do not use green in the subject. Place it on a perfectly
+flat #00FF00 chroma-key background with no shadows, gradients, texture,
+reflections, or floor plane.
+
+The design must be completely original and readable at small sizes, with a
+strong silhouette and an envelope distinct from the body. Include exactly one
+character and one envelope. Include no words, letters, numbers, symbols,
+watermark, or extra props.
+
+Avoid any likeness, silhouette, costume, palette, facial construction, trade
+dress, grid-board scene, educational-game interface, frog shape, or other
+recognizable element from Number Munchers or any MECC character. Do not use a
+CRT or monitor body, a Pac-Man-like circle, an arcade cabinet, or teeth beyond
+a simple block jaw edge.
+
+The generator returned a 1254 x 1254 RGBA PNG with a transparent background,
+so no chroma-key post-processing was necessary.

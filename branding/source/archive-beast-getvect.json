@@ -1,0 +1,54 @@
+{
+  "getvectVersion": "0.1.1",
+  "engine": "GetVect dist/engine/index.js",
+  "input": {
+    "width": 1254,
+    "height": 1254,
+    "bytes": 639365
+  },
+  "output": {
+    "width": 1254,
+    "height": 1254,
+    "bytes": 52540
+  },
+  "settings": {
+    "colorCount": 8,
+    "detail": 100,
+    "smoothing": 0,
+    "despeckle": 20,
+    "enhance": false,
+    "palette": null,
+    "preset": "clipart",
+    "detailLevel": "maximum",
+    "bwThreshold": 128,
+    "noiseReduction": "low",
+    "antiAliasing": "smart",
+    "roundness": 0,
+    "minArea": 90,
+    "overlap": "high",
+    "circleDetection": false,
+    "resultStyle": "filled",
+    "disabledColors": [],
+    "mergeThreshold": 0,
+    "sortOrder": "coverage"
+  },
+  "result": {
+    "durationMs": 907.169375,
+    "palette": [
+      "#482716",
+      "#d84930",
+      "#bd905c",
+      "#dab483",
+      "#b33b27",
+      "#f4e0be",
+      "#f05f43",
+      "#19100d"
+    ],
+    "sourceColors": 8,
+    "pathCount": 8,
+    "layerCount": 8,
+    "shapeCount": 8,
+    "subPathCount": 110,
+    "canvasOverflow": 0
+  }
+}

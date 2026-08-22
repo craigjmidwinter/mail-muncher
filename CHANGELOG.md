@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The mascot is now an original four-footed archive beast biting an envelope.
+  The behavior nods to grid-and-consume games, but the character carries no
+  copied likeness or trade dress; its generated raster, exact prompt, GetVect
+  settings/measurements, reviewed SVG master, and deterministic derived assets
+  are all retained in the repository.
 - CI now publishes the MCP Registry entry itself, from the pushed tag, instead
   of requiring a hand-run `mcp-publisher` device-code login before every
   release. A second job rewrites `version` and the image tag from

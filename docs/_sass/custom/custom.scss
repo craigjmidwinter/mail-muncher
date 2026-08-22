@@ -57,9 +57,9 @@ h1 code {
 // --------------------------------------------------------------- the logo --
 //
 // `site.logo` replaces the sidebar title text with a background image, so the
-// asset is the full lockup - mark plus wordmark. It is pixel art: pin it to an
-// exact 2x of its 16-unit grid rather than letting `contain` land it on a
-// fractional scale, which would make the pixels uneven.
+// asset is the full lockup - the master-derived head-and-envelope crop plus
+// wordmark. Pin it to the reviewed 32px display height rather than letting
+// `contain` choose a different size from one page width to another.
 .site-logo {
   background-size: auto 32px;
   min-height: 32px;

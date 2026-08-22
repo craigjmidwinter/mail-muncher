@@ -1,355 +1,243 @@
 #!/usr/bin/env python3
-"""Generate the mail-muncher brand assets.
+"""Generate every shipped mail-muncher brand asset from reviewed masters.
 
-Everything is authored on an exact pixel grid and emitted as SVG made of
-`<rect>` elements with `shape-rendering="crispEdges"`. The SVGs under
-`docs/assets/brand/` are the masters the site and the README consume; this
-script regenerates them, plus the PNG rasters, from the grids below.
+The mascot's human-reviewed GetVect SVG lives in
+``branding/source/archive-beast-master.svg``. This script validates that master,
+publishes it for the README/docs site, composes the wordmark lockups and social
+card, and rasterizes every documented PNG size.
 
     python3 branding/build.py
 
-Requires `rsvg-convert` (librsvg) for the PNGs and `fonttools` for converting
-the Silkscreen wordmark to outlines so no SVG consumer needs the font file.
-
-The mark carries its own warm palette, sampled from the reference drawing; the
-site and the wordmark carry the UI palette. See BRAND.md for both.
+Requires ``rsvg-convert`` (librsvg), ImageMagick, and fonttools.
 """
 
-import os
+from __future__ import annotations
+
+import re
 import subprocess
+import tempfile
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "docs", "assets", "brand")
-FONT = os.path.join(ROOT, "branding", "fonts", "Silkscreen-Bold.ttf")
 
-# ---------------------------------------------------------- mark palette ---
-# Nine values, all but the accent sampled straight out of the reference. The
-# mark is warmer than the interface on purpose: the UI palette is tuned for
-# text contrast, and forcing the drawing onto it turned its creams grey.
-PAL = {
-    "o": "#573923",  # case keyline, and the envelope's edge inside the mouth
-    "b": "#785331",  # screen bezel, mouth rim, the envelope's own keyline
-    "a": "#A8835D",  # case shade: undersides, the neck, edges turned away
-    "s": "#BC9F81",  # paper shade: the envelope's underside, the plinth
-    "t": "#D7B893",  # case tan: the CRT body
-    "m": "#E4CEB3",  # envelope paper - one step lighter than the case
-    "l": "#EFDEC5",  # highlight cream: teeth, eye whites, lit top-left edges
-    "k": "#000000",  # the screen, and the mouth's gape
-    "r": "#E0533D",  # chevron, blush, envelope seams, power LED  (Accent light)
-}
-# The keyline is the only value that differs between the two variants. On light
-# paper the tan case needs the dark line to hold its silhouette (tan on Paper is
-# 1.78:1); on a dark page that brown sinks into the background (1.77:1), so the
-# case's edge steps up to the shade value. The drawing is otherwise identical.
-PAL_LIGHT = dict(PAL)
-PAL_DARK = dict(PAL, o="#A8835D")
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "docs" / "assets" / "brand"
+MASTER = ROOT / "branding" / "source" / "archive-beast-master.svg"
+FONT = ROOT / "branding" / "fonts" / "Silkscreen-Bold.ttf"
 
-# ------------------------------------------------------------- UI values ---
-FIELD = "#17130F"  # social card background                       (Paper dark)
-PAPER = "#FBF8F5"  # opaque icon background                       (Paper light)
-INK = "#1F1A17"    # wordmark on light surfaces                   (Ink light)
-CREAM = "#F4EFEA"  # wordmark on dark surfaces                    (Ink dark)
+FIELD = "#17130F"
+PAPER = "#FBF8F5"
+INK = "#1F1A17"
+CREAM = "#F4EFEA"
 MUTED_D = "#A79C93"
 ACCENT = "#E0533D"
 
+MASTER_SIZE = 1254
+# The full figure becomes a red fleck at favicon size. This square is a crop of
+# the same reviewed master, not a separately drawn character: head, eye, jaw,
+# antennae, and enough envelope to retain the product story at 16px.
+SMALL_X = 590
+SMALL_Y = 145
+SMALL_SIZE = 650
 
-# ------------------------------------------------------------ grid tools ---
-def grid(w, h, fill="."):
-    return [[fill] * w for _ in range(h)]
-
-
-def rect(g, x0, y0, x1, y1, c):
-    for y in range(y0, y1 + 1):
-        for x in range(x0, x1 + 1):
-            if 0 <= y < len(g) and 0 <= x < len(g[0]):
-                g[y][x] = c
-
-
-def rows(g):
-    return ["".join(r) for r in g]
+TITLE = "mail-muncher archive beast"
+DESC = "A chunky red four-footed grid critter bites a cream envelope."
+DESC_SMALL = "A chunky red grid critter bites a cream envelope."
 
 
-# ------------------------------------------------------- the 60x60 mark ---
-# A cell-for-cell transcription of the approved reference drawing.
-#
-# The reference is itself a 53 x 53 bitmap: sampling it on a 53-cell pitch
-# reproduces it exactly, with not one impure cell, so the drawing's own grid is
-# the grid used here - no shape was re-laid, resampled or re-proportioned. The
-# 53 x 53 drawing is placed on a 60 x 60 canvas (offset 3, 3) purely for margin;
-# 60 divides every raster this repo ships (480/60 = 8, 240/60 = 4, 180/60 = 3,
-# 120/60 = 2) so every PNG lands on exact pixel boundaries.
-#
-# What was fixed is execution only. The reference dithers its keylines between
-# the two browns, its shade bands between the two mid tans and its lit edges
-# between the two creams; each of those runs is flattened to the single value
-# the run is plainly meant to be. Nothing moved.
-MARK = [
-    "............................................................",
-    "............................................................",
-    "............................................................",
-    "............................................................",
-    "......................oooooooooooooooooooo..................",
-    ".............oooooooooaaaaaaaaaaaaaaaaaaaaoooo..............",
-    "........ooooollllllllllllllllllllllllllllllllloo............",
-    "......oollllllttttttttttttttttttttttttttttttttllo...........",
-    ".....oollltttttttttttttttttttttttttttttttttttttllo..........",
-    "....ollltttttttttttttttttttttttttttttttttttttttttlo.........",
-    "....ollttttttttbbbbbbbbbbbbbbbbbbbbbbbbbbbbbtttttlo.........",
-    "...ollttttbbbbbkkkkkkkkkkkkkkkkkkkkkkkkkkkkkbbttttlo........",
-    "...ollttttbkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkbtttlo........",
-    "...olttttbkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkbttto........",
-    "...olttttbkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkbttto........",
-    "...oltttbkkkkkkkkkkklkkkkkkkkkkkkkkkkkkklkkkkkkbttto........",
-    "...oltttbkkkkkkkkkkkkllkkkkkkkkkkkkkkkllkkkkkkkbttto........",
-    "...oltttbkkkkkkkkkkkllllkkkkkkkkkkkkkllkkkkkkkkbttto........",
-    "...oltttbkkkrrkkkkkkllkklkkkkkkkkkkkllkklkkkkkkbttto........",
-    "...oltttbkkkkrrkkkkkllkkkkkkkkkkkkkkllkkkkkkkkkbttto........",
-    "...oltttbkkkkkrrkkkkllkkkkkkkkkkkkkkllkkkkkkkkkbttto........",
-    "...oltttbkkkkkkrrkkkkllkklkkkkkkkkkklllkkrrrkkkbttto........",
-    "...oltttbkkkkkrrkkkkkkkkkkkkkkkkkkkkkkkkkrrrkkkbttto........",
-    "...oltttbkkkkrrkkkkrrrkkkkkkkkkkkkkkkkkkkkkkkkkbttto........",
-    "...oltttbkkkrrkkkkkrrrkkkkkkkkkkkkkkkkkkkkkkkkkbttlo........",
-    "...oltttbkkkkkkkkkkkkkkkkkkkkbbbbbbbbbbbbkkbbbbbbbbbbbb.....",
-    "...oltttbkkkkkkkkkkkkkkkblllllllllllllllloalllllllllllrb....",
-    "...oltttbkkkkkkkkkkkkkkbblllklllklllklllbammlmmlmmmlmrtb....",
-    "...oltttbkkkkkkkkkkkkkbtkklkkklkkklkorlabmmmmmmmmmmmrmmb....",
-    "...oltttbkkkkkkkkkkkkkbbkkkkkkkkkkkoatrrlmmmmmmmmmmrmmmb....",
-    "...oltttbkkkkkkkkkkkkblkkkkkkkkkkkotmmmrrmmmmmmmmrrmmmmb....",
-    "...oltttbkkkkkkkkkkkkblkkkkkkkkkkkotmmmmrrmmmmmmrrtmmmmb....",
-    "...oltttbkkkkkkkkkkkkblkkkkkkkkkkkotmmmmmrrrmmtrrmmmmmmb....",
-    "...oltttbkkkkkkkkkkkkblkkkkkkkkkkkotmmmmrtrrrrrsrrmmmmmb....",
-    "...oltttbkkkkkkkkkkkkktkkkkkkkkkkkotmmmrmmmasssmmmrmmmmb....",
-    "...oltttbkkkkkkkkkkkkkbtkklkkklkkkotmmrmmmmmmmmmmmlrmmmb....",
-    "...oltttbkkkkkkkkkkkkkkbbllklklkklotmrlmmmmmmmmmmmmlrmmb....",
-    "...olttttbkkkkkkkkkkkkkkbllllllllllorlmmmmmmmmmmmmmmlrmb....",
-    "...olttttbkkkkkkkkkkkkkkkbssssssssssoassssssssssssssstrb....",
-    "...olttttbbkkkkkkkkkkkkkkkkkkkkkkkkkbbbbbbbbbbbbbbbbbbb.....",
-    "...oltttttbbbkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkbbbbbbbo........",
-    "...oltttttttbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbttttttoo........",
-    "....ottttttttlllllllllllllllllllllllllllllllttttttao........",
-    "....ootttttttttttttttttttttttttttttttttttttttttttao.........",
-    ".....ottttttttttttttttttttttttttttttttttttrrrtttaao.........",
-    "......oattttttttttttttttttttttttttttttttttorrttaoo..........",
-    ".......oooaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaooo............",
-    "..........ooooooooooooooooooooooooooooooooooo...............",
-    "...................obaaaaaaaaaaaaabo........................",
-    ".................ooobaaaaaaaaaaaaabooo......................",
-    "...............obaaabatssssssssssabaaabo....................",
-    "..............olllllssasssssssssassllllso...................",
-    ".............olllllllllllllllllllllllllllo..................",
-    "............ossmmmmmmmmmmmmmmmmmmmmmmmmmsso.................",
-    "............ooooooooooooooooooooooooooooooo.................",
-    "............................................................",
-    "............................................................",
-    "............................................................",
-    "............................................................",
-    "............................................................",
-]
+def read_master() -> str:
+    svg = MASTER.read_text()
+    if 'viewBox="0 0 1254 1254"' not in svg:
+        raise ValueError(f"{MASTER}: expected a 1254 x 1254 viewBox")
+    forbidden = re.findall(
+        r"<(?:script|image|foreignObject)\b|\bhref\s*=|\burl\(", svg, re.I
+    )
+    if forbidden:
+        raise ValueError(f"{MASTER}: forbidden external/active SVG content")
+    if len(re.findall(r"<g\b", svg)) != 8 or len(re.findall(r"<path\b", svg)) != 8:
+        raise ValueError(f"{MASTER}: reviewed geometry changed; want 8 layers / 8 paths")
+    match = re.search(r"<svg\b[^>]*>(.*)</svg>\s*$", svg, re.S)
+    if not match:
+        raise ValueError(f"{MASTER}: cannot find SVG body")
+    inner = re.sub(
+        r"<(?:title|desc)\b[^>]*>.*?</(?:title|desc)>",
+        "",
+        match.group(1),
+        flags=re.S,
+    )
+    return inner.strip()
 
 
-# ------------------------------------------------------- the 16x16 mark ---
-def mark16():
-    """Favicon mark: the same character at one device pixel per grid cell.
-
-    The chevron, the envelope, the blush and the case shading are deliberately
-    absent - at 16 device pixels they collapse into noise and take the
-    silhouette with them. What survives is the chunky CRT, the brow step that
-    carries the expression, a toothed mouth and one red LED in the same
-    bottom-right corner the full mark puts it. Rendered at 16 and looked at, not
-    assumed; an earlier version put the eyes and the mouth on adjacent rows and
-    the white shapes fused into one blob.
-    """
-    g = grid(16, 16)
-    rect(g, 2, 1, 13, 1, "o")
-    rect(g, 1, 2, 14, 2, "o")
-    rect(g, 2, 2, 13, 2, "t")
-    for y in range(3, 10):
-        g[y][1] = "o"
-        g[y][2] = "t"
-        rect(g, 3, y, 12, y, "k")
-        g[y][13] = "t"
-        g[y][14] = "o"
-    rect(g, 1, 10, 14, 10, "o")
-    rect(g, 2, 10, 13, 10, "t")
-    rect(g, 2, 11, 13, 11, "o")
-    rect(g, 6, 12, 9, 12, "a")               # neck
-    g[12][6] = g[12][9] = "o"
-    rect(g, 3, 13, 12, 13, "t")              # plinth
-    g[13][3] = g[13][12] = "o"
-    rect(g, 3, 14, 12, 14, "o")
-
-    for x, y in ((4, 3), (4, 4), (5, 4), (4, 5), (5, 5)):
-        g[y][x] = "l"                        # the loose top pixel is the brow
-    for x, y in ((11, 3), (10, 4), (11, 4), (10, 5), (11, 5)):
-        g[y][x] = "l"
-    rect(g, 5, 7, 10, 8, "l")                # mouth, one dark row clear of the
-    g[8][6] = g[8][9] = "k"                  # eyes, with two gaps for teeth
-    rect(g, 10, 10, 11, 10, "r")             # power LED, same corner as the
-    #                                          full mark puts it
-    return rows(g)
-
-
-# ------------------------------------------------------------------ SVG ---
-def svg_rects(rws, dx=0, dy=0, pal=PAL):
-    out = []
-    w = len(rws[0])
-    for y, row in enumerate(rws):
-        x = 0
-        while x < w:
-            c = row[x]
-            if c == ".":
-                x += 1
-                continue
-            n = 1
-            while x + n < w and row[x + n] == c:
-                n += 1
-            out.append(
-                f'<rect x="{x + dx}" y="{y + dy}" width="{n}" height="1" '
-                f'fill="{pal[c]}"/>'
-            )
-            x += n
-    return out
-
-
-def svg_doc(w, h, body, title, desc):
+def svg_doc(width: int, height: int, view_box: str, body: str, desc: str = DESC) -> str:
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
-        f'width="{w}" height="{h}" role="img" aria-labelledby="t d" '
-        f'shape-rendering="crispEdges">\n'
-        f"<title id=\"t\">{title}</title>\n<desc id=\"d\">{desc}</desc>\n"
-        + "\n".join(body)
-        + "\n</svg>\n"
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        f'width="{width}" height="{height}" viewBox="{view_box}" '
+        'role="img" aria-labelledby="t d">\n'
+        f'<title id="t">{TITLE}</title>\n'
+        f'<desc id="d">{desc}</desc>\n'
+        f"{body}\n</svg>\n"
     )
 
 
-DESC = ("A tan CRT monitor with an angry face on its dark screen, biting an "
-        "envelope in half.")
-DESC_SM = "A tan CRT monitor with two angry eyes on its dark screen."
-
-
-# ------------------------------------------------------------- wordmark ---
 class Wordmark:
-    """Silkscreen Bold, converted to outlines so no consumer needs the font."""
+    """Silkscreen Bold converted to outlines for portable SVG lockups."""
 
-    def __init__(self, path):
-        from fontTools.ttLib import TTFont
+    def __init__(self, path: Path):
         from fontTools.pens.svgPathPen import SVGPathPen
+        from fontTools.ttLib import TTFont
 
         self.font = TTFont(path)
         self.upem = self.font["head"].unitsPerEm
         self.cmap = self.font.getBestCmap()
-        self.gs = self.font.getGlyphSet()
-        self.SVGPathPen = SVGPathPen
+        self.glyphs = self.font.getGlyphSet()
+        self.pen_type = SVGPathPen
 
-    def advance(self, ch):
-        name = self.cmap[ord(ch)]
-        return self.font["hmtx"][name][0]
-
-    def paths(self, text, size, x, y, fill):
-        """`y` is the baseline. `size` must be a multiple of 8 to stay crisp."""
-        out = []
+    def paths(
+        self, text: str, size: int, x: float, y: float, fill: str
+    ) -> tuple[list[str], float]:
+        out: list[str] = []
         pen_x = 0.0
-        k = size / self.upem
-        for ch in text:
-            name = self.cmap[ord(ch)]
-            pen = self.SVGPathPen(self.gs)
-            self.gs[name].draw(pen)
-            d = pen.getCommands()
-            if d:
+        scale = size / self.upem
+        for char in text:
+            name = self.cmap[ord(char)]
+            pen = self.pen_type(self.glyphs)
+            self.glyphs[name].draw(pen)
+            commands = pen.getCommands()
+            if commands:
                 out.append(
-                    f'<path d="{d}" fill="{fill}" '
-                    f'transform="translate({x + pen_x * k:g} {y}) '
-                    f'scale({k:g} {-k:g})"/>'
+                    f'<path d="{commands}" fill="{fill}" '
+                    f'transform="translate({x + pen_x * scale:g} {y}) '
+                    f'scale({scale:g} {-scale:g})"/>'
                 )
-            pen_x += self.advance(ch)
-        return out, pen_x * k
+            pen_x += self.font["hmtx"][name][0]
+        return out, pen_x * scale
 
 
-# --------------------------------------------------------------- outputs ---
-def write(name, text):
-    p = os.path.join(OUT, name)
-    with open(p, "w") as f:
-        f.write(text)
-    return p
+def write(out: Path, name: str, content: str) -> Path:
+    path = out / name
+    path.write_text(content)
+    return path
 
 
-def png(src, dst, w, h=None):
+def rasterize(out: Path, source: str, target: str, width: int, height: int | None = None) -> None:
     subprocess.run(
-        ["rsvg-convert", "-w", str(w), "-h", str(h or w),
-         os.path.join(OUT, src), "-o", os.path.join(OUT, dst)],
+        [
+            "rsvg-convert",
+            "-w",
+            str(width),
+            "-h",
+            str(height or width),
+            str(out / source),
+            "-o",
+            str(out / target),
+        ],
         check=True,
     )
 
 
-def png_padded(src, dst, target, multiple, grid_size, bg):
-    """Render at an exact integer multiple, then pad to `target` on `bg`.
+def opaque_icon(out: Path) -> None:
+    with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+        subprocess.run(
+            [
+                "rsvg-convert",
+                "-w",
+                "180",
+                "-h",
+                "180",
+                str(out / "mark.svg"),
+                "-o",
+                tmp.name,
+            ],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "magick",
+                tmp.name,
+                "-background",
+                PAPER,
+                "-alpha",
+                "remove",
+                "-alpha",
+                "off",
+                "-strip",
+                str(out / "apple-touch-icon.png"),
+            ],
+            check=True,
+        )
 
-    Bitmap art only stays crisp at whole-number scales, so a 180px icon is a
-    144px mark on a 180px field rather than a 3.75x smear.
-    """
-    inner = grid_size * multiple
-    tmp = os.path.join(OUT, ".tmp.png")
-    subprocess.run(
-        ["rsvg-convert", "-w", str(inner), "-h", str(inner),
-         os.path.join(OUT, src), "-o", tmp], check=True)
-    subprocess.run(
-        ["magick", tmp, "-background", bg, "-gravity", "center",
-         "-extent", f"{target}x{target}", os.path.join(OUT, dst)], check=True)
-    os.remove(tmp)
 
+def build(out: Path) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    mascot = read_master()
 
-def main():
-    os.makedirs(OUT, exist_ok=True)
-    m60 = MARK
-    m16 = mark16()
+    full = svg_doc(MASTER_SIZE, MASTER_SIZE, f"0 0 {MASTER_SIZE} {MASTER_SIZE}", mascot)
+    small = svg_doc(
+        16,
+        16,
+        f"{SMALL_X} {SMALL_Y} {SMALL_SIZE} {SMALL_SIZE}",
+        mascot,
+        DESC_SMALL,
+    )
+    # The reviewed palette works on both surfaces: dark brown holds the edge on
+    # paper; on the dark scheme the brick-red body and cream envelope carry the
+    # silhouette. Separate filenames keep the README and site dark-mode wiring
+    # explicit without maintaining a second drawing.
+    for name, content in (
+        ("mark.svg", full),
+        ("mark-dark.svg", full),
+        ("mark-small.svg", small),
+        ("mark-small-dark.svg", small),
+    ):
+        write(out, name, content)
 
-    # 1. the marks. Free-standing on a transparent background, in two keyline
-    #    weights - see PAL_LIGHT / PAL_DARK above.
-    for suffix, pal in (("", PAL_LIGHT), ("-dark", PAL_DARK)):
-        write(f"mark{suffix}.svg",
-              svg_doc(60, 60, svg_rects(m60, pal=pal), "mail-muncher", DESC))
-        write(f"mark-small{suffix}.svg",
-              svg_doc(16, 16, svg_rects(m16, pal=pal), "mail-muncher", DESC_SM))
+    wordmark = Wordmark(FONT)
+    crop_scale = 16 / SMALL_SIZE
+    crop_group = (
+        f'<g transform="matrix({crop_scale:g} 0 0 {crop_scale:g} '
+        f'{-SMALL_X * crop_scale:g} {-SMALL_Y * crop_scale:g})">{mascot}</g>'
+    )
+    for name, fill in (("lockup.svg", INK), ("lockup-dark.svg", CREAM)):
+        paths, text_width = wordmark.paths("mail-muncher", 8, 20, 12, fill)
+        body = crop_group + "\n" + "\n".join(paths)
+        width = int(21 + text_width)
+        write(out, name, svg_doc(width, 16, f"0 0 {width} 16", body, DESC_SMALL))
 
-    # 2. lockups: small mark + Silkscreen Bold wordmark ------------------------
-    wm = Wordmark(FONT)
-    for name, pal, fill in (("lockup.svg", PAL_LIGHT, INK),
-                            ("lockup-dark.svg", PAL_DARK, CREAM)):
-        body = svg_rects(m16, pal=pal)
-        # font-size 8 units => one font pixel is one mark pixel
-        paths, tw = wm.paths("mail-muncher", 8, 20, 12, fill)
-        write(name, svg_doc(int(20 + tw + 1), 16, body + paths,
-                            "mail-muncher", DESC_SM))
+    rasterize(out, "mark.svg", "mark-480.png", 480)
+    rasterize(out, "mark-dark.svg", "mark-dark-480.png", 480)
+    for size in (16, 32, 48):
+        rasterize(out, "mark-small.svg", f"favicon-{size}.png", size)
+    opaque_icon(out)
+    rasterize(out, "lockup.svg", "lockup-408.png", 408, 64)
+    rasterize(out, "lockup-dark.svg", "lockup-dark-408.png", 408, 64)
 
-    # 3. rasters ---------------------------------------------------------------
-    png("mark.svg", "mark-480.png", 480)                # 60 * 8
-    png("mark-dark.svg", "mark-dark-480.png", 480)
-    png("mark-small.svg", "favicon-16.png", 16)
-    png("mark-small.svg", "favicon-32.png", 32)
-    png("mark-small.svg", "favicon-48.png", 48)
-    # iOS composites the icon onto its own background, so this one is opaque.
-    png_padded("mark.svg", "apple-touch-icon.png", 180, 3, 60, PAPER)
-    # 4x the 16-unit lockup grid; a PNG fallback for anywhere SVG is awkward.
-    png("lockup.svg", "lockup-408.png", 408, 64)
-    png("lockup-dark.svg", "lockup-dark-408.png", 408, 64)
-
-    # 4. social preview --------------------------------------------------------
-    body = [
+    full_scale = 480 / MASTER_SIZE
+    social_body = [
         f'<rect width="1280" height="640" fill="{FIELD}"/>',
-        '<g transform="translate(72 80) scale(8)">'
-        + "".join(svg_rects(m60, pal=PAL_DARK)) + "</g>",
+        f'<g transform="matrix({full_scale:g} 0 0 {full_scale:g} 72 80)">{mascot}</g>',
     ]
-    body += wm.paths("mail-muncher", 64, 576, 288, CREAM)[0]
-    body += wm.paths("an email client for AI agents", 24, 576, 344, MUTED_D)[0]
-    body.append(f'<rect x="576" y="376" width="192" height="8" fill="{ACCENT}"/>')
-    body += wm.paths("gmail.readonly — rules — files on disk",
-                     16, 576, 432, MUTED_D)[0]
-    write("social-preview.svg",
-          svg_doc(1280, 640, body, "mail-muncher",
-                  "mail-muncher — an email client for AI agents."))
-    png("social-preview.svg", "social-preview.png", 1280, 640)
+    social_body += wordmark.paths("mail-muncher", 64, 576, 288, CREAM)[0]
+    social_body += wordmark.paths("an email client for AI agents", 24, 576, 344, MUTED_D)[0]
+    social_body.append(f'<rect x="576" y="376" width="192" height="8" fill="{ACCENT}"/>')
+    social_body += wordmark.paths(
+        "gmail.readonly — rules — files on disk", 16, 576, 432, MUTED_D
+    )[0]
+    write(
+        out,
+        "social-preview.svg",
+        svg_doc(
+            1280,
+            640,
+            "0 0 1280 640",
+            "\n".join(social_body),
+            "mail-muncher — an email client for AI agents.",
+        ),
+    )
+    rasterize(out, "social-preview.svg", "social-preview.png", 1280, 640)
 
-    print("wrote", OUT)
+
+def main() -> None:
+    build(OUT)
+    print(f"wrote {OUT}")
 
 
 if __name__ == "__main__":
