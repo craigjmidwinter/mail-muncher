@@ -14,6 +14,12 @@ on:
 permissions:
   contents: read
 
+# Keep these values identical to ci.yml. The archive must be verified before
+# extraction so a compromised or replaced download never gets run.
+env:
+  MCP_PUBLISHER_VERSION: "1.8.1"
+  MCP_PUBLISHER_LINUX_AMD64_SHA256: "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc"
+
 jobs:
   release:
     name: goreleaser
@@ -143,7 +149,10 @@ jobs:
 
       - name: Install mcp-publisher
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSLo "$archive" "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/${archive}"
+          echo "${MCP_PUBLISHER_LINUX_AMD64_SHA256}  ${archive}" | sha256sum --check --strict
+          tar xzf "$archive" mcp-publisher
 
       # The committed server.json carries the version of the *previous*
       # release, so by the time this runs it is stale by exactly one tag. The
